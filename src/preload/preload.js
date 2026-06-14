@@ -7,7 +7,11 @@ contextBridge.exposeInMainWorld('api', {
   getCard: (id) => ipcRenderer.invoke('card:get', id),
   updateCard: (id, patch) => ipcRenderer.invoke('card:update', id, patch),
   collapse: (id, collapsed) => ipcRenderer.invoke('card:collapse', id, collapsed),
-  closeCard: (id) => ipcRenderer.invoke('card:close', id),
+  hideCard: (id) => ipcRenderer.invoke('card:hide', id),
+  deleteCard: (id) => ipcRenderer.invoke('card:close', id),
+  dragStart: (id) => ipcRenderer.send('card:dragStart', id),
+  dragMove: (id, dx, dy) => ipcRenderer.send('card:dragMove', id, dx, dy),
+  dragEnd: (id) => ipcRenderer.send('card:dragEnd', id),
   // 클립보드
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   readClipboard: () => ipcRenderer.invoke('clipboard:read'),

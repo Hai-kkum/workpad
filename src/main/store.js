@@ -17,6 +17,7 @@ let dek = null;          // Buffer(32) 데이터 암호화 키
 let state = null;        // 메모리 상태
 let saveTimer = null;
 let keyProtected = false; // safeStorage로 보호됐는지(감사/표시용)
+let lastLoadError = null;  // 복호 실패로 백업·초기화됐는지(B-11)
 
 function defaultState() {
   return {
@@ -81,7 +82,8 @@ function purgeExpired(s) {
     const c = s.cards[id];
     if (c.type === 'callmemo' && c.ttlDays > 0 && Array.isArray(c.lines)) {
       const cutoff = now - c.ttlDays * 86400000;
-      c.lines = c.lines.filter((ln) => !ln.t || ln.t >= cutoff);
+      // fail-closed: 타임스탬프 없는 줄은 카드 생성시각으로 폴백(그것도 없으면 만료 처리) → TTL 우회 차단
+      c.lines = c.lines.filter((ln) => (ln.t || c.createdAt || 0) >= cutoff);
     }
   }
 }
@@ -96,8 +98,8 @@ function init() {
       state = defaultState();
     }
   } catch (e) {
-    // 복호 실패(키 불일치/손상) 시 데이터 손실 방지를 위해 백업 후 초기화
-    try { fs.renameSync(DATA_FILE(), DATA_FILE() + '.corrupt-' + Date.now()); } catch (_) {}
+    // 복호 실패(키 불일치/손상) 시 데이터 손실 방지를 위해 백업 후 초기화. 사용자에게 알리도록 기록(B-11).
+    try { const bak = DATA_FILE() + '.corrupt-' + Date.now(); fs.renameSync(DATA_FILE(), bak); lastLoadError = { backup: bak }; } catch (_) { lastLoadError = { backup: null }; }
     state = defaultState();
   }
   // 누락 필드 보정
@@ -126,6 +128,7 @@ const api = {
   init,
   flush,
   isKeyProtected: () => keyProtected,
+  getLoadError: () => lastLoadError,
   getState: () => state,
   getSettings: () => state.settings,
   updateSettings: (patch) => { Object.assign(state.settings, patch); scheduleSave(); return state.settings; },

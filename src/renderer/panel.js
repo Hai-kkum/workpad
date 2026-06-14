@@ -16,8 +16,15 @@ async function refreshCards() {
     d.className = 'cardrow';
     d.innerHTML = `<span class="badge ${c.type}">${typeLabel(c.type)}</span>` +
       `<span class="ct">${escapeHtml(c.title || '(제목 없음)')}</span>` +
-      (c.visible ? '' : '<span class="hidden-tag">숨김</span>');
-    d.onclick = () => window.api.focusCard(c.id);
+      (c.visible ? '' : '<span class="hidden-tag">숨김</span>') +
+      `<button class="del" title="삭제(되돌릴 수 없음)">✕</button>`;
+    d.addEventListener('click', (e) => { if (e.target.closest('.del')) return; window.api.focusCard(c.id); });
+    d.querySelector('.del').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (window.confirm(`'${c.title || '제목 없음'}' 카드를 삭제할까요? 되돌릴 수 없습니다.`)) {
+        await window.api.deleteCard(c.id); refreshCards(); refreshStatus();
+      }
+    });
     el.appendChild(d);
   }
 }
@@ -38,9 +45,16 @@ async function refreshPresets() {
 async function refreshStatus() {
   const s = await window.api.status();
   const set = await window.api.getSettings();
-  $('#status').textContent = (s.keyProtected ? '로컬 암호화 적용(키 보호됨)' : '주의: 키 평문 폴백(DPAPI 불가)') + ` · 카드 ${s.cardCount}개`;
+  const st = $('#status');
+  st.textContent = (s.keyProtected ? '로컬 암호화 적용(키 보호됨)' : '주의: 키가 보호되지 않음(DPAPI 불가) — 이 PC에서 데이터 보호가 약합니다') + ` · 카드 ${s.cardCount}개`;
+  st.className = s.keyProtected ? 'status' : 'status warn';
   $('#hotkeyHint').textContent = `전체 숨김 단축키: ${set.hotkeyHideAll || '(없음)'}`;
   $('#agentId').value = set.agentId || '';
+  const note = $('#loadnote');
+  if (s.loadError) {
+    note.textContent = '이전 데이터를 열지 못해 백업하고 새로 시작했습니다' + (s.loadError.backup ? ` (백업: ${s.loadError.backup})` : '') + '.';
+    note.style.display = 'block';
+  } else { note.style.display = 'none'; }
 }
 
 function wire() {

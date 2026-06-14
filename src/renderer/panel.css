@@ -43,3 +43,8 @@ input:focus { border-color: #2563eb; }
 
 .hint { font-size: 11px; color: #9aa1ab; margin-top: 6px; }
 .status { font-size: 11px; color: #6b7280; padding-top: 10px; border-top: 1px solid #f0f1f3; margin-top: 8px; }
+.status.warn { color: #c0392b; }
+.loadnote { font-size: 11px; color: #c0392b; padding-top: 6px; word-break: break-all; }
+.cardrow .del { margin-left: 2px; border: 0; background: transparent; color: #b6bcc5; cursor: pointer; font-size: 12px; line-height: 1; padding: 2px 4px; border-radius: 4px; visibility: hidden; }
+.cardrow:hover .del { visibility: visible; }
+.cardrow .del:hover { color: #c0392b; background: #fdecea; }
