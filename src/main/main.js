@@ -26,6 +26,11 @@ let ownerWin = null;   // 숨은 소유 창 (Alt-Tab 숨김용)
 let panelWin = null;   // 컨트롤 패널
 const cards = new Map(); // id -> BrowserWindow
 
+// 단일 인스턴스 잠금: 아이콘/런처로 중복 실행 시 같은 암호화 파일에 두 인스턴스가 쓰는 손상 방지.
+const isPrimary = app.requestSingleInstanceLock();
+if (!isPrimary) app.quit();
+else app.on('second-instance', () => { if (panelWin && !panelWin.isDestroyed()) { if (panelWin.isMinimized()) panelWin.restore(); panelWin.show(); panelWin.focus(); } });
+
 function debounce(fn, ms) {
   let t = null;
   return (...a) => { if (t) clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
@@ -44,7 +49,8 @@ function wireWindow(win, shouldShow, label) {
   win.webContents.on('did-finish-load', () => { logf(`${label}: did-finish-load`); doShow('did-finish-load'); });
   win.webContents.on('did-fail-load', (_e, code, desc, url) => logf(`${label}: did-fail-load ${code} ${desc} ${url}`));
   win.webContents.on('preload-error', (_e, p, err) => logf(`${label}: preload-error ${p} ${err && err.stack || err}`));
-  win.webContents.on('console-message', (_e, level, message, line, src) => logf(`${label}: console[${level}] ${message} (${src}:${line})`));
+  // 보안: 렌더러 콘솔 메시지에는 카드 내용(PII)이 섞일 수 있어 개발 모드에서만 파일 기록.
+  if (isDev) win.webContents.on('console-message', (_e, level, message, line, src) => logf(`${label}: console[${level}] ${message} (${src}:${line})`));
   setTimeout(() => doShow('timeout'), 1500);
 }
 
@@ -55,7 +61,7 @@ function defaultCard(type) {
   const base = {
     id: newId(), type, alwaysOnTop: false, collapsed: false, visible: true,
     createdAt: Date.now(), updatedAt: Date.now(),
-    format: { enabled: false, template: '[{날짜단축} {시간}] {내용}', timeBasis: 'now' },
+    format: { enabled: false, template: '[{날짜단축} {시간}] {내용}' },
   };
   if (type === 'memo') {
     return { ...base, title: '메모', bounds: { x, y, width: 260, height: 200 }, content: { text: '' } };
@@ -64,7 +70,7 @@ function defaultCard(type) {
     return {
       ...base, title: '콜 메모', ttlDays: 30,
       bounds: { x, y, width: 300, height: 260 },
-      format: { enabled: true, template: '[{시간}] {내용}', timeBasis: 'now' },
+      format: { enabled: true, template: '[{시간}] {내용}' },
       lines: [],
     };
   }
@@ -83,19 +89,24 @@ function createCardWindow(card, show) {
     minWidth: 160, minHeight: COLLAPSED_H,
     frame: false, skipTaskbar: true, parent: ownerWin,
     alwaysOnTop: !!card.alwaysOnTop, show: false,
+    maximizable: false, fullscreenable: false,
     backgroundColor: '#ffffff',
     webPreferences: { preload: PRELOAD, contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   win._collapsed = collapsed;
-  if (collapsed) win._fullHeight = card.bounds.height;
+  if (collapsed) win.setResizable(false); // 접힌 채 복원돼도 리사이즈 불가(H-2)
   if (card.alwaysOnTop) win.setAlwaysOnTop(true);
 
   wireWindow(win, show && card.visible !== false, `card ${card.type}`);
   win.loadFile(CARD_HTML, { query: { id: card.id } });
 
+  // 위치는 접힘 여부와 무관하게 저장. 높이는 펼친 상태에서만 저장(접힘 높이 30이 펼침 높이를 덮어쓰지 않게).
   const persist = debounce(() => {
-    if (win.isDestroyed() || win._collapsed) return;
-    store.updateBounds(card.id, win.getBounds());
+    if (win.isDestroyed()) return;
+    const b = win.getBounds();
+    const prev = store.getCard(card.id);
+    const height = win._collapsed && prev && prev.bounds ? prev.bounds.height : b.height;
+    store.updateBounds(card.id, { x: b.x, y: b.y, width: b.width, height });
   }, 250);
   win.on('move', persist);
   win.on('resize', persist);
@@ -143,14 +154,44 @@ function registerIpc() {
   ipcMain.handle('card:collapse', (_e, id, collapsed) => {
     const win = cards.get(id);
     if (!win || win.isDestroyed()) return;
-    if (collapsed) { win._collapsed = true; win._fullHeight = win.getBounds().height; win.setResizable(false); win.setBounds({ height: COLLAPSED_H }); }
-    else { win._collapsed = false; win.setResizable(true); if (win._fullHeight) win.setBounds({ height: win._fullHeight }); }
+    if (collapsed) {
+      const b = win.getBounds(); // 현재(펼친) 높이를 즉시 저장 → debounce 경쟁 없이 확정
+      store.updateBounds(id, { x: b.x, y: b.y, width: b.width, height: b.height });
+      win._collapsed = true; win.setResizable(false); win.setBounds({ height: COLLAPSED_H });
+    } else {
+      win._collapsed = false; win.setResizable(true);
+      const c = store.getCard(id);
+      if (c && c.bounds && c.bounds.height) win.setBounds({ height: c.bounds.height });
+    }
     store.updateCard(id, { collapsed });
   });
-  ipcMain.handle('card:close', (_e, id) => {
+  ipcMain.handle('card:close', (_e, id) => { // 영구 삭제(패널의 휴지통에서 확인 후 호출)
     const win = cards.get(id);
     store.removeCard(id);
     if (win && !win.isDestroyed()) win.close();
+  });
+  ipcMain.handle('card:hide', (_e, id) => { // 카드 X = 숨김(데이터 유지, 복구 가능 — B-8)
+    const win = cards.get(id);
+    if (win && !win.isDestroyed()) { win.hide(); store.setVisible(id, false); }
+  });
+  // 헤더 수동 드래그(메인 측 기준 캡처). dragStart에서 크기·위치 1회 캡처 → dragMove는 그 기준에 델타만 적용
+  // (크기 고정 → 창 커짐 방지, 렌더러 비동기 레이스 없음). 입력 검증 포함. dragEnd에서 최종 위치 즉시 저장.
+  ipcMain.on('card:dragStart', (_e, id) => { const w = cards.get(id); if (w && !w.isDestroyed()) w._dragBase = w.getBounds(); });
+  ipcMain.on('card:dragMove', (_e, id, dx, dy) => {
+    const w = cards.get(id);
+    if (!w || w.isDestroyed() || !w._dragBase) return;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    const b = w._dragBase;
+    w.setBounds({ x: Math.round(b.x + dx), y: Math.round(b.y + dy), width: b.width, height: b.height });
+  });
+  ipcMain.on('card:dragEnd', (_e, id) => {
+    const w = cards.get(id);
+    if (!w || w.isDestroyed()) return;
+    w._dragBase = null;
+    const b = w.getBounds();
+    const prev = store.getCard(id);
+    const height = w._collapsed && prev && prev.bounds ? prev.bounds.height : b.height;
+    store.updateBounds(id, { x: b.x, y: b.y, width: b.width, height });
   });
   ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text ?? '')); return true; });
   ipcMain.handle('clipboard:read', () => clipboard.readText());
@@ -160,7 +201,7 @@ function registerIpc() {
     if (Object.prototype.hasOwnProperty.call(patch, 'hotkeyHideAll')) applyHotkey(s.hotkeyHideAll);
     return s;
   });
-  ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), cardCount: cards.size }));
+  ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), cardCount: cards.size, loadError: store.getLoadError() }));
   ipcMain.handle('panel:listCards', () => store.listCards());
   ipcMain.handle('panel:createCard', (_e, type) => {
     const card = defaultCard(type === 'memo' || type === 'callmemo' ? type : 'snippet');
@@ -178,7 +219,13 @@ function registerIpc() {
   ipcMain.handle('preset:list', () => store.listPresets());
   ipcMain.handle('preset:save', (_e, name) => {
     const snap = {};
-    for (const [id, win] of cards) if (!win.isDestroyed()) snap[id] = { bounds: win.getBounds(), visible: win.isVisible() };
+    for (const [id, win] of cards) {
+      if (win.isDestroyed()) continue;
+      const b = win.getBounds();
+      const c = store.getCard(id);
+      const height = win._collapsed && c && c.bounds ? c.bounds.height : b.height; // 접힘이면 펼침 높이 사용
+      snap[id] = { bounds: { x: b.x, y: b.y, width: b.width, height }, visible: win.isVisible(), collapsed: !!win._collapsed };
+    }
     store.savePreset(name, snap);
     return store.listPresets();
   });
@@ -188,7 +235,10 @@ function registerIpc() {
     for (const [id, conf] of Object.entries(snap)) {
       const win = cards.get(id);
       if (!win || win.isDestroyed()) continue;
-      win.setBounds(conf.bounds);
+      // 접힌 창은 높이를 건드리지 않고 위치/너비만(렌더러 접힘 상태와 desync 방지). store엔 펼침 bounds 보존.
+      const target = win._collapsed ? { x: conf.bounds.x, y: conf.bounds.y, width: conf.bounds.width } : conf.bounds;
+      win.setBounds(target);
+      store.updateBounds(id, conf.bounds);
       if (conf.visible) { win.show(); store.setVisible(id, true); } else { win.hide(); store.setVisible(id, false); }
     }
     return true;
@@ -197,6 +247,7 @@ function registerIpc() {
 
 app.whenReady().then(() => {
   try {
+    if (!isPrimary) return; // 2차 인스턴스는 창을 만들지 않고 종료
     logf('app ready: start');
     store.init();
     logf('store init ok, keyProtected=' + store.isKeyProtected());

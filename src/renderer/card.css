@@ -16,8 +16,9 @@ body {
 .title {
   flex: 1; min-width: 0; font-size: 12px; font-weight: 500; color: #374151;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; outline: none;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag; user-select: none; cursor: move;
 }
+.title.editing { user-select: text; cursor: text; background: #fffbe6; border-radius: 3px; }
 .title:focus { background: #fffbe6; border-radius: 3px; }
 .bbtn {
   -webkit-app-region: no-drag; border: 0; background: transparent; color: #6b7280;
@@ -44,7 +45,7 @@ body {
 }
 .row:hover { background: #f7f9fc; }
 .row .time {
-  flex: 0 0 auto; font: 11px/1.55 ui-monospace, Consolas, monospace; color: #9aa1ab; padding-top: 1px;
+  flex: 0 0 auto; font: 11px/1.55 ui-monospace, Consolas, monospace; color: #9aa1ab; padding-top: 1px; user-select: none;
 }
 .row .text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; outline: none; }
 .row .text[contenteditable="true"] { background: #fffbe6; border-radius: 3px; padding: 0 2px; }
