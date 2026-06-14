@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <link rel="stylesheet" href="card.css" />
+</head>
+<body>
+  <div class="bar">
+    <span class="title" id="title" spellcheck="false" contenteditable="true"></span>
+    <button class="bbtn" id="fmt" title="복사 서식">#</button>
+    <button class="bbtn" id="pin" title="항상 위">위</button>
+    <button class="bbtn" id="fold" title="접기">—</button>
+    <button class="bbtn" id="close" title="닫기">✕</button>
+  </div>
+  <div class="body" id="body"></div>
+  <script src="card.js"></script>
+</body>
+</html>

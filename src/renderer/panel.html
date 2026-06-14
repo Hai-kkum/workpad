@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <div class="head"><span class="logo">Workpad</span><span class="ver">v0.1</span></div>
+
+  <div class="sec">
+    <div class="lbl">카드 추가</div>
+    <div class="btns">
+      <button data-type="snippet">+ 상용구</button>
+      <button data-type="callmemo">+ 콜 메모</button>
+      <button data-type="memo">+ 메모</button>
+    </div>
+  </div>
+
+  <div class="sec">
+    <div class="lbl">전체 카드</div>
+    <div class="btns">
+      <button id="showAll">표시</button>
+      <button id="hideAll">숨김</button>
+      <button id="toggleAll">토글</button>
+    </div>
+    <div class="cards" id="cards"></div>
+  </div>
+
+  <div class="sec">
+    <div class="lbl">배치 프리셋</div>
+    <div class="row">
+      <input id="presetName" placeholder="프리셋 이름" />
+      <button id="savePreset">저장</button>
+    </div>
+    <div class="presets" id="presets"></div>
+  </div>
+
+  <div class="sec">
+    <div class="lbl">설정</div>
+    <div class="row"><label class="fld">상담사ID</label><input id="agentId" placeholder="예: 김상담" /></div>
+    <div class="hint" id="hotkeyHint"></div>
+  </div>
+
+  <div class="status" id="status"></div>
+  <script src="panel.js"></script>
+</body>
+</html>

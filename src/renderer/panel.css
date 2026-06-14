@@ -1,0 +1,45 @@
+html, body { margin: 0; }
+body {
+  font: 13px/1.5 system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
+  color: #1f2328; background: #fff; padding: 0 12px 12px;
+}
+.head { display: flex; align-items: baseline; gap: 8px; padding: 12px 0 8px; }
+.logo { font-size: 16px; font-weight: 600; }
+.ver { font-size: 11px; color: #9aa1ab; }
+
+.sec { padding: 8px 0; border-top: 1px solid #f0f1f3; }
+.lbl { font-size: 11px; font-weight: 500; color: #6b7280; margin-bottom: 6px; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; }
+button {
+  border: 1px solid #d7dbe0; background: #fff; color: #1f2328; border-radius: 6px;
+  padding: 5px 10px; font-size: 12px; cursor: pointer;
+}
+button:hover { background: #f3f4f6; }
+button:active { transform: scale(0.98); }
+
+.row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+input {
+  flex: 1; min-width: 0; border: 1px solid #d7dbe0; border-radius: 6px; padding: 5px 8px; font-size: 12px; outline: none;
+}
+input:focus { border-color: #2563eb; }
+.fld { flex: 0 0 56px; font-size: 12px; color: #6b7280; }
+
+.cards { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
+.cardrow {
+  display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer;
+}
+.cardrow:hover { background: #f3f4f6; }
+.badge { flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 999px; color: #374151; background: #eef0f3; }
+.badge.snippet { background: #e0edff; color: #1d4ed8; }
+.badge.callmemo { background: #ffe9e0; color: #c2410c; }
+.badge.memo { background: #e7f5ec; color: #15803d; }
+.ct { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hidden-tag { font-size: 10px; color: #9aa1ab; }
+.empty { font-size: 12px; color: #b6bcc5; padding: 4px 6px; }
+
+.presets { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+.preset { font-size: 12px; padding: 3px 9px; border: 1px solid #d7dbe0; border-radius: 999px; cursor: pointer; }
+.preset:hover { background: #f3f4f6; }
+
+.hint { font-size: 11px; color: #9aa1ab; margin-top: 6px; }
+.status { font-size: 11px; color: #6b7280; padding-top: 10px; border-top: 1px solid #f0f1f3; margin-top: 8px; }

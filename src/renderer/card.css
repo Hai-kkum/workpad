@@ -1,0 +1,75 @@
+html, body { margin: 0; height: 100%; }
+body {
+  font: 13px/1.5 system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
+  color: #1f2328; background: #fff;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+/* 타이틀바 = 창 이동 영역(drag). 내부 요소는 no-drag */
+.bar {
+  height: 30px; flex: 0 0 30px;
+  display: flex; align-items: center; gap: 1px;
+  padding: 0 3px 0 8px;
+  background: #f3f4f6; border-bottom: 1px solid #e3e5e8;
+  -webkit-app-region: drag; user-select: none;
+}
+.title {
+  flex: 1; min-width: 0; font-size: 12px; font-weight: 500; color: #374151;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; outline: none;
+  -webkit-app-region: no-drag;
+}
+.title:focus { background: #fffbe6; border-radius: 3px; }
+.bbtn {
+  -webkit-app-region: no-drag; border: 0; background: transparent; color: #6b7280;
+  font-size: 12px; width: 22px; height: 22px; border-radius: 4px; cursor: pointer;
+  line-height: 1; padding: 0;
+}
+.bbtn:hover { background: #e5e7eb; color: #111; }
+.bbtn.active { color: #2563eb; background: #dbeafe; }
+
+.body { flex: 1; min-height: 0; overflow: auto; -webkit-app-region: no-drag; }
+.collapsed .body { display: none; }
+
+/* 메모(자유 텍스트) */
+.memo {
+  width: 100%; height: 100%; box-sizing: border-box; border: 0; outline: none; resize: none;
+  padding: 8px 10px; font: 13px/1.55 system-ui, "Malgun Gothic", sans-serif; color: #1f2328; background: #fff;
+}
+
+/* 목록(상용구 / 콜 메모) */
+.list { display: flex; flex-direction: column; }
+.row {
+  position: relative; display: flex; align-items: flex-start; gap: 6px;
+  padding: 5px 8px; border-bottom: 1px solid #f1f2f4;
+}
+.row:hover { background: #f7f9fc; }
+.row .time {
+  flex: 0 0 auto; font: 11px/1.55 ui-monospace, Consolas, monospace; color: #9aa1ab; padding-top: 1px;
+}
+.row .text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; outline: none; }
+.row .text[contenteditable="true"] { background: #fffbe6; border-radius: 3px; padding: 0 2px; }
+.row .copy {
+  flex: 0 0 auto; visibility: hidden; border: 0; background: transparent; color: #9aa1ab;
+  cursor: pointer; padding: 1px 2px; display: inline-flex; align-items: center;
+}
+.row:hover .copy { visibility: visible; }
+.row .copy:hover { color: #2563eb; }
+.row.copied { background: #eafaf0; }
+.row.copied .copy { visibility: visible; color: #16a34a; }
+
+.ghost .text:empty:before { content: attr(data-ph); color: #b6bcc5; }
+
+.hint { padding: 6px 8px; font-size: 11px; color: #9aa1ab; }
+
+/* 복사 서식 편집 */
+.fmtbox {
+  padding: 6px 8px; border-bottom: 1px solid #eef0f3; background: #fbfcfd;
+  font-size: 11px; display: flex; flex-direction: column; gap: 4px;
+}
+.fmtbox[hidden] { display: none; }
+.fmtbox label { display: flex; align-items: center; gap: 6px; color: #374151; }
+.fmtbox .tpl {
+  width: 100%; box-sizing: border-box; border: 1px solid #d7dbe0; border-radius: 4px;
+  padding: 3px 6px; font: 12px ui-monospace, Consolas, monospace;
+}
+.fmtbox .tokens { color: #9aa1ab; }
