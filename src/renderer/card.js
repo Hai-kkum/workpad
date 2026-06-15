@@ -18,7 +18,7 @@ function fmtTime(t) { const d = new Date(t); return `${pad(d.getHours())}:${pad(
 
 function applyStamp(text, fmt, raw) {
   if (raw || !fmt || !fmt.enabled) return text;
-  const d = new Date();
+  const d = (fmt.timeBasis === 'callStart' && card && card.createdAt) ? new Date(card.createdAt) : new Date(); // ④c 시각 기준(통화 시작=카드 생성 시각)
   const map = {
     '{날짜}': `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
     '{날짜단축}': `${pad(d.getMonth() + 1)}/${pad(d.getDate())}`,
@@ -85,16 +85,21 @@ function makeRow(line) {
   text.className = 'text'; text.setAttribute('contenteditable', 'false'); text.textContent = line.text;
   row.appendChild(text);
 
-  const copy = document.createElement('button');
-  copy.className = 'copy'; copy.title = '복사 (Shift+클릭=원문)'; copy.innerHTML = COPY_SVG;
-  row.appendChild(copy);
+  const copyOn = card.copyMode !== false; // ④a 카드별 복사 토글(기본 on)
+  let copy = null;
+  if (copyOn) {
+    copy = document.createElement('button');
+    copy.className = 'copy'; copy.title = '복사 (Shift+클릭=원문)'; copy.innerHTML = COPY_SVG;
+    row.appendChild(copy);
+    copy.addEventListener('click', (e) => { e.stopPropagation(); copyRow(text.textContent, e.shiftKey, row, copy); });
+  }
 
   let downX = 0, downY = 0;
   row.addEventListener('pointerdown', (e) => {
     if (e.target.closest('.copy')) return;
     downX = e.clientX; downY = e.clientY;
   });
-  row.addEventListener('pointerup', (e) => {
+  if (copyOn) row.addEventListener('pointerup', (e) => {
     if (e.target.closest('.copy')) return;
     if (text.getAttribute('contenteditable') === 'true') return;     // 편집 중엔 복사 안 함
     const dist = Math.hypot(e.clientX - downX, e.clientY - downY);
@@ -108,7 +113,6 @@ function makeRow(line) {
     clearTimeout(row._copyTimer);
     enterEdit(text, line, row);
   });
-  copy.addEventListener('click', (e) => { e.stopPropagation(); copyRow(text.textContent, e.shiftKey, row, copy); });
 
   return row;
 }
@@ -137,16 +141,24 @@ function renderList(body) {
   const fmtbox = document.createElement('div');
   fmtbox.className = 'fmtbox'; fmtbox.hidden = true;
   fmtbox.innerHTML =
+    '<label><input type="checkbox" id="copyOn"> 줄 클릭으로 복사</label>' +
     '<label><input type="checkbox" id="fmtOn"> 복사 시 서식 적용</label>' +
     '<input class="tpl" id="fmtTpl" placeholder="[{날짜단축} {시간}] {내용}">' +
-    '<div class="tokens">토큰: {날짜} {날짜단축} {시간} {상담사ID} {내용}</div>';
+    '<label class="tb">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="callStart">통화 시작</option></select></label>' +
+    '<div class="tokens">토큰: {날짜} {날짜단축} {시간} {상담사ID} {내용} · Shift+클릭=원문</div>';
   body.appendChild(fmtbox);
+  const copyOnBox = fmtbox.querySelector('#copyOn');
   const fmtOn = fmtbox.querySelector('#fmtOn');
   const fmtTpl = fmtbox.querySelector('#fmtTpl');
+  const fmtBasis = fmtbox.querySelector('#fmtBasis');
+  copyOnBox.checked = card.copyMode !== false;
   fmtOn.checked = !!card.format.enabled;
   fmtTpl.value = card.format.template || '';
+  fmtBasis.value = card.format.timeBasis || 'now';
+  copyOnBox.addEventListener('change', () => { card.copyMode = copyOnBox.checked; saveCard({ copyMode: card.copyMode }); renderList(body); }); // 토글 시 목록 재구성
   fmtOn.addEventListener('change', () => { card.format.enabled = fmtOn.checked; saveCard({ format: card.format }); });
   fmtTpl.addEventListener('input', () => { card.format.template = fmtTpl.value; saveCard({ format: card.format }); });
+  fmtBasis.addEventListener('change', () => { card.format.timeBasis = fmtBasis.value; saveCard({ format: card.format }); });
   document.getElementById('fmt').onclick = () => { fmtbox.hidden = !fmtbox.hidden; };
 
   const list = document.createElement('div');
@@ -187,6 +199,17 @@ function renderList(body) {
   });
 
   body.appendChild(list);
+
+  if (card.type === 'callmemo') { // ④b 콜메모 전체(양식) 복사
+    const allBtn = document.createElement('button');
+    allBtn.className = 'allcopy'; allBtn.textContent = '전체 복사(양식)';
+    allBtn.addEventListener('click', () => {
+      const out = card.lines.map((l) => applyStamp(l.text, card.format, false)).join('\n');
+      window.api.copyText(out);
+      allBtn.textContent = '복사됨 ✓'; setTimeout(() => { allBtn.textContent = '전체 복사(양식)'; }, 1000);
+    });
+    body.appendChild(allBtn);
+  }
 
   const hint = document.createElement('div');
   hint.className = 'hint'; hint.textContent = '줄 클릭=복사 · 더블클릭=수정 · 드래그=선택';
