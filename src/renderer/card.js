@@ -31,11 +31,33 @@ function applyStamp(text, fmt, raw) {
   return s;
 }
 
+function luhn(num) { // 카드번호 체크섬
+  let sum = 0, alt = false;
+  for (let i = num.length - 1; i >= 0; i--) {
+    let d = num.charCodeAt(i) - 48;
+    if (alt) { d *= 2; if (d > 9) d -= 9; }
+    sum += d; alt = !alt;
+  }
+  return sum % 10 === 0;
+}
+function validRRN(d) { // 주민번호 13자리: 월/일/성별 자리 유효성
+  const mm = +d.slice(2, 4), dd = +d.slice(4, 6), g = +d[6];
+  return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31 && g >= 1 && g <= 8;
+}
 function maskPII(text) {
   if (settings.maskPII === false || !text) return text; // 기본 on (명시적 false만 해제)
-  let s = String(text);
-  s = s.replace(/\b(\d{4})[-\s]?(\d{4})[-\s]?(\d{4})[-\s]?(\d{4})\b/g, '$1-****-****-$4'); // 카드번호 16자리
-  s = s.replace(/\b(\d{6})[-\s]?(\d)\d{6}\b/g, '$1-$2******'); // 주민등록번호 13자리(생년월일+성별1자리만)
+  // 전각 숫자 → ASCII 정규화(전각 우회 차단)
+  let s = String(text).replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+  // 카드번호 16자리: 구분자(. - 공백/탭/개행) 허용·임베드 포함, Luhn 통과 시에만 마스킹(합법 숫자표 보존)
+  s = s.replace(/\d(?:[\s.\-]?\d){15}/g, (m) => {
+    const d = m.replace(/\D/g, '');
+    return (d.length === 16 && luhn(d)) ? d.slice(0, 4) + '-****-****-' + d.slice(12) : m;
+  });
+  // 주민번호 13자리: 날짜/성별 검증 시에만 마스킹(생년월일+성별1자리만 노출)
+  s = s.replace(/\d(?:[\s.\-]?\d){12}/g, (m) => {
+    const d = m.replace(/\D/g, '');
+    return (d.length === 13 && validRRN(d)) ? d.slice(0, 6) + '-' + d[6] + '******' : m;
+  });
   return s;
 }
 
@@ -193,8 +215,8 @@ function renderList(body) {
     e.preventDefault();
     const t = await window.api.readClipboard();
     if (!t) return;
-    const parts = t.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    for (const p of parts) addLine(maskPII(p));
+    const parts = maskPII(t).split(/\r?\n/).map((s) => s.trim()).filter(Boolean); // 분할 전 전체 마스킹(구분자로 쪼개진 PII 우회 차단)
+    for (const p of parts) addLine(p);
     gtext.textContent = '';
   });
 
@@ -282,9 +304,9 @@ function renderTable(body) {
   ctrl.appendChild(mkBtn('표 붙여넣기', async () => {
     const t = await window.api.readClipboard();
     if (!t) return;
-    const lines = t.replace(/\r/g, '').split('\n');
+    const lines = maskPII(t).replace(/\r/g, '').split('\n'); // 분할 전 전체 마스킹(셀로 쪼개진 PII 우회 차단)
     if (lines.length && lines[lines.length - 1] === '') lines.pop();
-    const parsed = lines.map((l) => l.split('\t').map(maskPII));
+    const parsed = lines.map((l) => l.split('\t'));
     if (parsed.length) { card.rows = parsed; saveRows(); draw(); }
   }));
 
