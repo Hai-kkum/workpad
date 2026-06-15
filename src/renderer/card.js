@@ -31,6 +31,34 @@ function applyStamp(text, fmt, raw) {
   return s;
 }
 
+function maskPII(text) {
+  if (settings.maskPII === false || !text) return text; // 기본 on (명시적 false만 해제)
+  let s = String(text);
+  s = s.replace(/\b(\d{4})[-\s]?(\d{4})[-\s]?(\d{4})[-\s]?(\d{4})\b/g, '$1-****-****-$4'); // 카드번호 16자리
+  s = s.replace(/\b(\d{6})[-\s]?(\d)\d{6}\b/g, '$1-$2******'); // 주민등록번호 13자리(생년월일+성별1자리만)
+  return s;
+}
+
+// 붙여넣기(Ctrl+V) 시 PII 마스킹. PII가 있으면 가공해 삽입, 없으면 기본 동작 유지.
+function maskPaste(e) {
+  const cd = e.clipboardData || window.clipboardData;
+  if (!cd) return;
+  const text = cd.getData('text');
+  if (!text) return;
+  const masked = maskPII(text);
+  if (masked === text) return;
+  e.preventDefault();
+  const el = e.target;
+  if (el && el.tagName === 'TEXTAREA') {
+    const a = el.selectionStart, b = el.selectionEnd;
+    el.value = el.value.slice(0, a) + masked + el.value.slice(b);
+    el.selectionStart = el.selectionEnd = a + masked.length;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    document.execCommand('insertText', false, masked); // contenteditable(행/셀/제목)
+  }
+}
+
 function caretEnd(el) {
   const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
   const s = getSelection(); s.removeAllRanges(); s.addRange(r);
@@ -154,7 +182,7 @@ function renderList(body) {
     const t = await window.api.readClipboard();
     if (!t) return;
     const parts = t.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
-    for (const p of parts) addLine(p);
+    for (const p of parts) addLine(maskPII(p));
     gtext.textContent = '';
   });
 
@@ -173,6 +201,77 @@ function renderMemo(body) {
   ta.placeholder = '메모…';
   ta.addEventListener('input', () => saveCard({ content: { text: ta.value } }));
   body.appendChild(ta);
+}
+
+function renderTable(body) {
+  document.getElementById('fmt').style.display = 'none'; // 표는 줄 스탬프 없음
+  body.innerHTML = '';
+  if (!Array.isArray(card.rows) || !card.rows.length) card.rows = [['항목', '값'], ['', '']];
+  const saveRows = () => saveCard({ rows: card.rows });
+  const cols = () => card.rows.reduce((m, r) => Math.max(m, r.length), 1);
+
+  const ctrl = document.createElement('div');
+  ctrl.className = 'tctrl';
+  const mkBtn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); return b; };
+  const wrap = document.createElement('div'); wrap.className = 'twrap';
+
+  const editCell = (td, ri, ci) => {
+    td.setAttribute('contenteditable', 'true'); td.focus(); caretEnd(td);
+    const commit = () => {
+      td.setAttribute('contenteditable', 'false');
+      while (card.rows[ri].length <= ci) card.rows[ri].push('');
+      card.rows[ri][ci] = td.textContent; saveRows();
+    };
+    td.addEventListener('keydown', (e) => { if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') { e.preventDefault(); td.blur(); } });
+    td.addEventListener('blur', commit, { once: true });
+  };
+
+  const draw = () => {
+    wrap.innerHTML = '';
+    const n = cols();
+    const table = document.createElement('table'); table.className = 'tbl';
+    card.rows.forEach((row, ri) => {
+      const tr = document.createElement('tr');
+      for (let ci = 0; ci < n; ci++) {
+        const td = document.createElement('td');
+        td.textContent = row[ci] != null ? row[ci] : '';
+        td.setAttribute('contenteditable', 'false');
+        let px = 0, py = 0;
+        td.addEventListener('pointerdown', (e) => { px = e.clientX; py = e.clientY; });
+        td.addEventListener('pointerup', (e) => {
+          if (td.getAttribute('contenteditable') === 'true') return;       // 편집 중 제외
+          if (Math.hypot(e.clientX - px, e.clientY - py) >= 4) return;     // 드래그면 범위 선택
+          if (!getSelection().isCollapsed) return;
+          window.api.copyText(td.textContent);
+          td.classList.add('copied'); setTimeout(() => td.classList.remove('copied'), 800);
+        });
+        td.addEventListener('dblclick', () => editCell(td, ri, ci));
+        td.addEventListener('input', () => { while (card.rows[ri].length <= ci) card.rows[ri].push(''); card.rows[ri][ci] = td.textContent; saveRows(); }); // 입력 즉시 저장
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    });
+    wrap.appendChild(table);
+  };
+
+  ctrl.appendChild(mkBtn('+행', () => { card.rows.push(new Array(cols()).fill('')); saveRows(); draw(); }));
+  ctrl.appendChild(mkBtn('+열', () => { const c = cols(); card.rows.forEach((r) => { while (r.length < c) r.push(''); r.push(''); }); saveRows(); draw(); }));
+  ctrl.appendChild(mkBtn('표 붙여넣기', async () => {
+    const t = await window.api.readClipboard();
+    if (!t) return;
+    const lines = t.replace(/\r/g, '').split('\n');
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const parsed = lines.map((l) => l.split('\t').map(maskPII));
+    if (parsed.length) { card.rows = parsed; saveRows(); draw(); }
+  }));
+
+  body.appendChild(ctrl);
+  body.appendChild(wrap);
+  draw();
+
+  const hint = document.createElement('div');
+  hint.className = 'hint'; hint.textContent = '셀 클릭=복사 · 더블클릭=수정 · 드래그+Ctrl+C=범위(엑셀 호환)';
+  body.appendChild(hint);
 }
 
 function setupBar() {
@@ -247,9 +346,12 @@ async function init() {
   card = await window.api.getCard(ID);
   settings = await window.api.getSettings();
   if (!card) { document.body.innerHTML = '<div class="hint">카드를 찾을 수 없습니다.</div>'; return; }
+  document.addEventListener('paste', maskPaste, true); // 붙여넣기 PII 마스킹(모든 편집 영역)
   setupBar();
   const body = document.getElementById('body');
-  if (card.type === 'memo') renderMemo(body); else renderList(body);
+  if (card.type === 'memo') renderMemo(body);
+  else if (card.type === 'table') renderTable(body);
+  else renderList(body);
 }
 
 init();

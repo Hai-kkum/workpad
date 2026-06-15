@@ -22,7 +22,7 @@ let lastLoadError = null;  // 복호 실패로 백업·초기화됐는지(B-11)
 function defaultState() {
   return {
     version: 1,
-    settings: { agentId: '', hotkeyHideAll: 'Control+Alt+H' },
+    settings: { agentId: '', hotkeyHideAll: 'Control+Alt+H', maskPII: true },
     cards: {},      // id -> card
     presets: {},    // name -> { [cardId]: {bounds, visible} }
   };
@@ -104,6 +104,7 @@ function init() {
   }
   // 누락 필드 보정
   state = Object.assign(defaultState(), state);
+  state.settings = Object.assign(defaultState().settings, state.settings || {}); // 설정 누락 키 보정(maskPII 등)
   purgeExpired(state);
   scheduleSave();
   return state;

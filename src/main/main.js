@@ -74,6 +74,9 @@ function defaultCard(type) {
       lines: [],
     };
   }
+  if (type === 'table') {
+    return { ...base, title: '표', bounds: { x, y, width: 320, height: 240 }, rows: [['항목', '값'], ['', '']] };
+  }
   return {
     ...base, title: '상용구', bounds: { x, y, width: 280, height: 220 },
     lines: [{ text: '본인 확인 감사합니다. 바로 확인해 드리겠습니다.' }, { text: '추가로 궁금하신 점은 없으실까요?' }],
@@ -202,9 +205,31 @@ function registerIpc() {
     return s;
   });
   ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), cardCount: cards.size, loadError: store.getLoadError() }));
+  ipcMain.handle('search', (_e, q) => {
+    q = String(q || '').trim().toLowerCase();
+    if (!q) return [];
+    const ctx = (t) => {
+      const i = t.toLowerCase().indexOf(q);
+      if (i < 0) return null;
+      const a = Math.max(0, i - 20);
+      return (a > 0 ? '…' : '') + t.slice(a, i + q.length + 40).trim() + (i + q.length + 40 < t.length ? '…' : '');
+    };
+    const out = [];
+    for (const c of Object.values(store.getState().cards)) {
+      const fields = [];
+      if (c.title) fields.push(c.title);
+      if (c.content && c.content.text) fields.push(c.content.text);
+      if (Array.isArray(c.lines)) c.lines.forEach((ln) => fields.push(ln.text || ''));
+      if (Array.isArray(c.rows)) c.rows.forEach((r) => r.forEach((cell) => fields.push(cell || '')));
+      const snips = [];
+      for (const f of fields) { const s = ctx(f); if (s) { snips.push(s); if (snips.length >= 2) break; } }
+      if (snips.length) out.push({ id: c.id, title: c.title || '(제목 없음)', type: c.type, snippet: snips.join('  ·  ') });
+    }
+    return out;
+  });
   ipcMain.handle('panel:listCards', () => store.listCards());
   ipcMain.handle('panel:createCard', (_e, type) => {
-    const card = defaultCard(type === 'memo' || type === 'callmemo' ? type : 'snippet');
+    const card = defaultCard(['memo', 'callmemo', 'table'].includes(type) ? type : 'snippet');
     store.addCard(card);
     createCardWindow(card, true);
     return card.id;

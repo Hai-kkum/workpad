@@ -23,6 +23,8 @@ input {
 }
 input:focus { border-color: #2563eb; }
 .fld { flex: 0 0 56px; font-size: 12px; color: #6b7280; }
+.chk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #374151; }
+.chk input { flex: 0 0 auto; width: auto; }
 
 .cards { margin-top: 8px; display: flex; flex-direction: column; gap: 2px; }
 .cardrow {
@@ -33,9 +35,14 @@ input:focus { border-color: #2563eb; }
 .badge.snippet { background: #e0edff; color: #1d4ed8; }
 .badge.callmemo { background: #ffe9e0; color: #c2410c; }
 .badge.memo { background: #e7f5ec; color: #15803d; }
+.badge.table { background: #efe7fb; color: #6b21a8; }
 .ct { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hidden-tag { font-size: 10px; color: #9aa1ab; }
 .empty { font-size: 12px; color: #b6bcc5; padding: 4px 6px; }
+.resrow { padding: 6px; border-radius: 6px; cursor: pointer; }
+.resrow:hover { background: #f3f4f6; }
+.resline { display: flex; align-items: center; gap: 8px; }
+.snip { font-size: 11px; color: #6b7280; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .presets { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
 .preset { font-size: 12px; padding: 3px 9px; border: 1px solid #d7dbe0; border-radius: 999px; cursor: pointer; }
