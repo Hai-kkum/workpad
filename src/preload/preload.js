@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
   status: () => ipcRenderer.invoke('app:status'),
+  search: (q) => ipcRenderer.invoke('search', q),
   // 패널
   listCards: () => ipcRenderer.invoke('panel:listCards'),
   createCard: (type) => ipcRenderer.invoke('panel:createCard', type),

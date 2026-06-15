@@ -62,6 +62,17 @@ body {
 
 .hint { padding: 6px 8px; font-size: 11px; color: #9aa1ab; }
 
+/* 표 카드 */
+.twrap { overflow: auto; }
+.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
+.tbl td { border: 1px solid #e3e5e8; padding: 3px 6px; min-width: 40px; cursor: default; white-space: pre-wrap; word-break: break-word; vertical-align: top; }
+.tbl td:hover { background: #f7f9fc; }
+.tbl td.copied { background: #eafaf0; }
+.tbl td[contenteditable="true"] { background: #fffbe6; }
+.tctrl { display: flex; gap: 6px; padding: 5px 8px; border-bottom: 1px solid #f1f2f4; }
+.tctrl button { -webkit-app-region: no-drag; border: 1px solid #d7dbe0; background: #fff; border-radius: 5px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
+.tctrl button:hover { background: #f3f4f6; }
+
 /* 복사 서식 편집 */
 .fmtbox {
   padding: 6px 8px; border-bottom: 1px solid #eef0f3; background: #fbfcfd;
