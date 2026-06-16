@@ -31,55 +31,55 @@ function applyStamp(text, fmt, raw) {
   return s;
 }
 
-function luhn(num) { // 카드번호 체크섬
-  let sum = 0, alt = false;
-  for (let i = num.length - 1; i >= 0; i--) {
-    let d = num.charCodeAt(i) - 48;
-    if (alt) { d *= 2; if (d > 9) d -= 9; }
-    sum += d; alt = !alt;
-  }
-  return sum % 10 === 0;
-}
-function validRRN(d) { // 주민번호 13자리: 월/일/성별 자리 유효성
-  const mm = +d.slice(2, 4), dd = +d.slice(4, 6), g = +d[6];
-  return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31 && g >= 1 && g <= 8;
-}
-function maskPII(text) {
-  if (settings.maskPII === false || !text) return text; // 기본 on (명시적 false만 해제)
-  // 전각 숫자 → ASCII 정규화(전각 우회 차단)
-  let s = String(text).replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
-  // 카드번호 16자리: 구분자(. - 공백/탭/개행) 허용·임베드 포함, Luhn 통과 시에만 마스킹(합법 숫자표 보존)
-  s = s.replace(/\d(?:[\s.\-]?\d){15}/g, (m) => {
-    const d = m.replace(/\D/g, '');
-    return (d.length === 16 && luhn(d)) ? d.slice(0, 4) + '-****-****-' + d.slice(12) : m;
-  });
-  // 주민번호 13자리: 날짜/성별 검증 시에만 마스킹(생년월일+성별1자리만 노출)
-  s = s.replace(/\d(?:[\s.\-]?\d){12}/g, (m) => {
-    const d = m.replace(/\D/g, '');
-    return (d.length === 13 && validRRN(d)) ? d.slice(0, 6) + '-' + d[6] + '******' : m;
-  });
-  return s;
-}
+// ── 비파괴 공개형 마스킹(SE-6) ─────────────────────────────────────────────
+// 원문은 그대로 저장하고 화면에만 마스킹 표시. 클릭 복사는 항상 원문. 👁로 잠시 공개 후 자동 재마스킹.
+const REVEAL_MS = 6000;            // 공개 지속(노출 최소화)
+let revealed = false;              // 현재 카드 전체 공개 상태
+let revealTimer = null;
+let env = { hostname: '' };
+const maskEls = [];                // 표시 요소 레지스트리: { el, getRaw }
 
-// 붙여넣기(Ctrl+V) 시 PII 마스킹. PII가 있으면 가공해 삽입, 없으면 기본 동작 유지.
-function maskPaste(e) {
-  const cd = e.clipboardData || window.clipboardData;
-  if (!cd) return;
-  const text = cd.getData('text');
-  if (!text) return;
-  const masked = maskPII(text);
-  if (masked === text) return;
-  e.preventDefault();
-  const el = e.target;
-  if (el && el.tagName === 'TEXTAREA') {
-    const a = el.selectionStart, b = el.selectionEnd;
-    el.value = el.value.slice(0, a) + masked + el.value.slice(b);
-    el.selectionStart = el.selectionEnd = a + masked.length;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-  } else {
-    document.execCommand('insertText', false, masked); // contenteditable(행/셀/제목)
-  }
+// 설정이 켜져 있을 때만 화면 가림. 원문(getRaw)은 손대지 않음.
+function display(raw) {
+  if (raw == null) raw = '';
+  return (settings.maskPII !== false && window.PII) ? window.PII.maskPII(raw) : raw;
 }
+function hasPII(raw) {
+  return settings.maskPII !== false && window.PII ? window.PII.hasPII(raw) : false;
+}
+// 표시 요소 등록(편집 비활성 상태에서만 마스킹 갱신). 목록/표 재렌더 시 호출 전 maskEls.length=0 으로 초기화.
+function registerMask(el, getRaw) { maskEls.push({ el, getRaw }); paintMask(el, getRaw()); }
+function paintMask(el, raw) {
+  if (el.getAttribute('contenteditable') === 'true') return; // 편집 중엔 원문 그대로
+  const pii = hasPII(raw);
+  el.textContent = revealed ? raw : display(raw);
+  el.classList.toggle('masked', pii);
+  el.classList.toggle('revealed', pii && revealed);
+}
+function refreshMask() { for (const m of maskEls) { if (m.el.isConnected) paintMask(m.el, m.getRaw()); } }
+
+function setReveal(on) {
+  revealed = !!on;
+  const btn = document.getElementById('reveal');
+  if (btn) btn.classList.toggle('active', revealed);
+  clearTimeout(revealTimer);
+  if (revealed) { showWatermark(); revealTimer = setTimeout(() => setReveal(false), REVEAL_MS); }
+  else hideWatermark();
+  refreshMask();
+}
+// SE-7 맥락 워터마크: 공개하는 순간에만 상담사ID·PC명·시각을 옅게 타일링. 재마스킹 시 제거.
+function showWatermark() {
+  hideWatermark();
+  const who = settings.agentId || '미지정';
+  const host = env.hostname || '';
+  const now = new Date();
+  const label = `${who} · ${host} · ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  const wm = document.createElement('div');
+  wm.id = 'watermark';
+  for (let i = 0; i < 60; i++) { const s = document.createElement('span'); s.textContent = label; wm.appendChild(s); }
+  document.body.appendChild(wm);
+}
+function hideWatermark() { const wm = document.getElementById('watermark'); if (wm) wm.remove(); }
 
 function caretEnd(el) {
   const r = document.createRange(); r.selectNodeContents(el); r.collapse(false);
@@ -104,16 +104,17 @@ function makeRow(line) {
   }
 
   const text = document.createElement('span');
-  text.className = 'text'; text.setAttribute('contenteditable', 'false'); text.textContent = line.text;
+  text.className = 'text'; text.setAttribute('contenteditable', 'false');
+  registerMask(text, () => line.text); // 화면=마스킹, 원문은 line.text 유지(SE-6)
   row.appendChild(text);
 
   const copyOn = card.copyMode !== false; // ④a 카드별 복사 토글(기본 on)
   let copy = null;
   if (copyOn) {
     copy = document.createElement('button');
-    copy.className = 'copy'; copy.title = '복사 (Shift+클릭=원문)'; copy.innerHTML = COPY_SVG;
+    copy.className = 'copy'; copy.title = '복사 (원문 그대로 · Shift+클릭=서식무시)'; copy.innerHTML = COPY_SVG;
     row.appendChild(copy);
-    copy.addEventListener('click', (e) => { e.stopPropagation(); copyRow(text.textContent, e.shiftKey, row, copy); });
+    copy.addEventListener('click', (e) => { e.stopPropagation(); copyRow(line.text, e.shiftKey, row, copy); }); // 원문 복사
   }
 
   let downX = 0, downY = 0;
@@ -128,7 +129,7 @@ function makeRow(line) {
     if (dist >= 4) return;                                            // 드래그면 선택만
     if (!getSelection().isCollapsed) return;                          // 선택 영역 있으면 복사 안 함
     const raw = e.shiftKey;
-    row._copyTimer = setTimeout(() => copyRow(text.textContent, raw, row, copy), 180); // 더블클릭이면 취소됨
+    row._copyTimer = setTimeout(() => copyRow(line.text, raw, row, copy), 180); // 원문 복사(더블클릭이면 취소됨)
   });
   row.addEventListener('dblclick', (e) => {
     if (e.target.closest('.copy')) return;
@@ -141,12 +142,13 @@ function makeRow(line) {
 
 function enterEdit(text, line, row) {
   text.setAttribute('contenteditable', 'true');
+  text.textContent = line.text; // 편집은 원문 대상(마스킹 해제하고 진짜 값을 고침)
   text.focus(); caretEnd(text);
   const commit = () => {
     text.setAttribute('contenteditable', 'false');
     const v = text.textContent.trim();
     if (v === '') { const i = card.lines.indexOf(line); if (i >= 0) card.lines.splice(i, 1); row.remove(); }
-    else { line.text = v; }
+    else { line.text = v; paintMask(text, v); } // 저장 후 다시 마스킹 표시
     persistLines();
   };
   text.addEventListener('keydown', (e) => {
@@ -158,6 +160,7 @@ function enterEdit(text, line, row) {
 
 function renderList(body) {
   body.innerHTML = '';
+  maskEls.length = 0; // 재렌더 시 표시 요소 레지스트리 초기화
 
   // 복사 서식 편집 박스 (목록형 카드만)
   const fmtbox = document.createElement('div');
@@ -215,7 +218,7 @@ function renderList(body) {
     e.preventDefault();
     const t = await window.api.readClipboard();
     if (!t) return;
-    const parts = maskPII(t).split(/\r?\n/).map((s) => s.trim()).filter(Boolean); // 분할 전 전체 마스킹(구분자로 쪼개진 PII 우회 차단)
+    const parts = t.split(/\r?\n/).map((s) => s.trim()).filter(Boolean); // 원문 저장(비파괴) — 화면은 makeRow가 마스킹
     for (const p of parts) addLine(p);
     gtext.textContent = '';
   });
@@ -251,6 +254,7 @@ function renderMemo(body) {
 function renderTable(body) {
   document.getElementById('fmt').style.display = 'none'; // 표는 줄 스탬프 없음
   body.innerHTML = '';
+  maskEls.length = 0; // 재렌더 시 표시 요소 레지스트리 초기화
   if (!Array.isArray(card.rows) || !card.rows.length) card.rows = [['항목', '값'], ['', '']];
   const saveRows = () => saveCard({ rows: card.rows });
   const cols = () => card.rows.reduce((m, r) => Math.max(m, r.length), 1);
@@ -261,11 +265,14 @@ function renderTable(body) {
   const wrap = document.createElement('div'); wrap.className = 'twrap';
 
   const editCell = (td, ri, ci) => {
-    td.setAttribute('contenteditable', 'true'); td.focus(); caretEnd(td);
+    td.setAttribute('contenteditable', 'true');
+    td.textContent = card.rows[ri][ci] != null ? card.rows[ri][ci] : ''; // 편집은 원문 대상
+    td.focus(); caretEnd(td);
     const commit = () => {
       td.setAttribute('contenteditable', 'false');
       while (card.rows[ri].length <= ci) card.rows[ri].push('');
       card.rows[ri][ci] = td.textContent; saveRows();
+      paintMask(td, td.textContent); // 저장 후 다시 마스킹 표시
     };
     td.addEventListener('keydown', (e) => { if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') { e.preventDefault(); td.blur(); } });
     td.addEventListener('blur', commit, { once: true });
@@ -273,25 +280,27 @@ function renderTable(body) {
 
   const draw = () => {
     wrap.innerHTML = '';
+    maskEls.length = 0; // 표 전체 재구성 — 셀 레지스트리 초기화(누수 방지)
     const n = cols();
     const table = document.createElement('table'); table.className = 'tbl';
     card.rows.forEach((row, ri) => {
       const tr = document.createElement('tr');
       for (let ci = 0; ci < n; ci++) {
         const td = document.createElement('td');
-        td.textContent = row[ci] != null ? row[ci] : '';
         td.setAttribute('contenteditable', 'false');
+        const cr = ri, cc = ci;
+        registerMask(td, () => (card.rows[cr] && card.rows[cr][cc] != null ? card.rows[cr][cc] : '')); // 화면=마스킹, 원문은 card.rows 유지
         let px = 0, py = 0;
         td.addEventListener('pointerdown', (e) => { px = e.clientX; py = e.clientY; });
         td.addEventListener('pointerup', (e) => {
           if (td.getAttribute('contenteditable') === 'true') return;       // 편집 중 제외
           if (Math.hypot(e.clientX - px, e.clientY - py) >= 4) return;     // 드래그면 범위 선택
           if (!getSelection().isCollapsed) return;
-          window.api.copyText(td.textContent);
+          window.api.copyText(card.rows[cr] && card.rows[cr][cc] != null ? card.rows[cr][cc] : ''); // 원문 복사
           td.classList.add('copied'); setTimeout(() => td.classList.remove('copied'), 800);
         });
         td.addEventListener('dblclick', () => editCell(td, ri, ci));
-        td.addEventListener('input', () => { while (card.rows[ri].length <= ci) card.rows[ri].push(''); card.rows[ri][ci] = td.textContent; saveRows(); }); // 입력 즉시 저장
+        td.addEventListener('input', () => { while (card.rows[ri].length <= ci) card.rows[ri].push(''); card.rows[ri][ci] = td.textContent; saveRows(); }); // 입력 즉시 저장(편집 중 원문)
         tr.appendChild(td);
       }
       table.appendChild(tr);
@@ -304,10 +313,16 @@ function renderTable(body) {
   ctrl.appendChild(mkBtn('표 붙여넣기', async () => {
     const t = await window.api.readClipboard();
     if (!t) return;
-    const lines = maskPII(t).replace(/\r/g, '').split('\n'); // 분할 전 전체 마스킹(셀로 쪼개진 PII 우회 차단)
+    const MAX_ROWS = 500, MAX_COLS = 50; // 크기 상한(P2: 거대 클립보드로 인한 프리즈 방지)
+    let lines = t.replace(/\r/g, '').split('\n'); // 원문 저장(비파괴) — 화면은 셀이 마스킹
     if (lines.length && lines[lines.length - 1] === '') lines.pop();
-    const parsed = lines.map((l) => l.split('\t'));
-    if (parsed.length) { card.rows = parsed; saveRows(); draw(); }
+    let truncated = lines.length > MAX_ROWS;
+    if (truncated) lines = lines.slice(0, MAX_ROWS);
+    const parsed = lines.map((l) => { const cells = l.split('\t'); if (cells.length > MAX_COLS) { truncated = true; return cells.slice(0, MAX_COLS); } return cells; });
+    if (parsed.length) {
+      card.rows = parsed; saveRows(); draw();
+      if (truncated) { const h = document.querySelector('.hint'); if (h) h.textContent = `※ 표가 커서 ${MAX_ROWS}행·${MAX_COLS}열로 잘렸습니다`; }
+    }
   }));
 
   body.appendChild(ctrl);
@@ -385,13 +400,17 @@ function setupBar() {
   });
 
   document.getElementById('close').onclick = () => window.api.hideCard(ID); // X = 숨김(삭제는 패널에서 확인 후)
+
+  const reveal = document.getElementById('reveal'); // 👁 PII 잠시 공개(자동 재마스킹 + 워터마크)
+  reveal.onclick = () => setReveal(!revealed);
+  if (card.type === 'memo') reveal.style.display = 'none'; // 메모는 자유 텍스트(마스킹 비적용)
 }
 
 async function init() {
   card = await window.api.getCard(ID);
   settings = await window.api.getSettings();
+  try { env = await window.api.getEnv(); } catch (_) {} // 워터마크용 PC명
   if (!card) { document.body.innerHTML = '<div class="hint">카드를 찾을 수 없습니다.</div>'; return; }
-  document.addEventListener('paste', maskPaste, true); // 붙여넣기 PII 마스킹(모든 편집 영역)
   setupBar();
   const body = document.getElementById('body');
   if (card.type === 'memo') renderMemo(body);

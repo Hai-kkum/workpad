@@ -6,8 +6,10 @@
 const { app, BrowserWindow, ipcMain, clipboard, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const crypto = require('crypto');
 const store = require('./store');
+const { maskPII } = require('../shared/pii'); // 검색 스니펫도 화면 가림 규칙과 동일하게 마스킹(SE-6)
 
 const COLLAPSED_H = 30;
 const PRELOAD = path.join(__dirname, '..', 'preload', 'preload.js');
@@ -205,22 +207,29 @@ function registerIpc() {
     return s;
   });
   ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), cardCount: cards.size, loadError: store.getLoadError() }));
+  ipcMain.handle('env:get', () => ({ hostname: os.hostname() })); // 맥락 워터마크용 좌석/PC 식별(SE-7)
   ipcMain.handle('search', (_e, q) => {
     q = String(q || '').trim().toLowerCase();
     if (!q) return [];
-    const ctx = (t) => {
+    const maskOn = store.getSettings().maskPII !== false;
+    const show = (t) => (maskOn ? maskPII(t) : t); // 스니펫 노출 전 화면 가림 규칙 적용(검색 결과로 PII 새지 않게)
+    // 원문에서 매칭 위치를 잡되, 보여주는 스니펫은 마스킹본. malformed 데이터(비문자/비배열) 가드(P2).
+    const ctx = (raw) => {
+      const t = String(raw);
       const i = t.toLowerCase().indexOf(q);
       if (i < 0) return null;
       const a = Math.max(0, i - 20);
-      return (a > 0 ? '…' : '') + t.slice(a, i + q.length + 40).trim() + (i + q.length + 40 < t.length ? '…' : '');
+      const slice = t.slice(a, i + q.length + 40);
+      return (a > 0 ? '…' : '') + show(slice).trim() + (i + q.length + 40 < t.length ? '…' : '');
     };
     const out = [];
     for (const c of Object.values(store.getState().cards)) {
       const fields = [];
-      if (c.title) fields.push(c.title);
-      if (c.content && c.content.text) fields.push(c.content.text);
-      if (Array.isArray(c.lines)) c.lines.forEach((ln) => fields.push(ln.text || ''));
-      if (Array.isArray(c.rows)) c.rows.forEach((r) => r.forEach((cell) => fields.push(cell || '')));
+      const push = (v) => { if (v != null && v !== '') fields.push(String(v)); };
+      push(c.title);
+      if (c.content && c.content.text) push(c.content.text);
+      if (Array.isArray(c.lines)) c.lines.forEach((ln) => push(ln && ln.text));
+      if (Array.isArray(c.rows)) c.rows.forEach((r) => { if (Array.isArray(r)) r.forEach((cell) => push(cell)); });
       const snips = [];
       for (const f of fields) { const s = ctx(f); if (s) { snips.push(s); if (snips.length >= 2) break; } }
       if (snips.length) out.push({ id: c.id, title: c.title || '(제목 없음)', type: c.type, snippet: snips.join('  ·  ') });
