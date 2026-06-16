@@ -20,14 +20,27 @@ contextBridge.exposeInMainWorld('api', {
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
   status: () => ipcRenderer.invoke('app:status'),
   getEnv: () => ipcRenderer.invoke('env:get'),
+  exportData: (pass) => ipcRenderer.invoke('data:export', pass),
+  importData: (pass) => ipcRenderer.invoke('data:import', pass),
+  piiScan: () => ipcRenderer.invoke('data:piiScan'),
+  onFlash: (cb) => ipcRenderer.on('card:flash', () => cb()), // 카드 렌더러: 패널 더블클릭 신호 수신
   search: (q) => ipcRenderer.invoke('search', q),
+  // 패널 헤더 제어(프레임리스)
+  panelPin: () => ipcRenderer.invoke('panel:pin'),
+  panelCollapse: (collapsed) => ipcRenderer.invoke('panel:collapse', collapsed),
+  panelMinimize: () => ipcRenderer.invoke('panel:minimize'),
+  panelClose: () => ipcRenderer.invoke('panel:close'),
+  panelState: () => ipcRenderer.invoke('panel:getState'),
   // 패널
   listCards: () => ipcRenderer.invoke('panel:listCards'),
-  createCard: (type) => ipcRenderer.invoke('panel:createCard', type),
+  createCard: (type, section) => ipcRenderer.invoke('panel:createCard', type, section),
   focusCard: (id) => ipcRenderer.invoke('panel:focusCard', id),
+  flashCard: (id) => ipcRenderer.invoke('panel:flashCard', id),
   showAll: () => ipcRenderer.invoke('panel:showAll'),
   hideAll: () => ipcRenderer.invoke('panel:hideAll'),
   toggleAll: () => ipcRenderer.invoke('panel:toggleAll'),
+  showSection: (name) => ipcRenderer.invoke('panel:showSection', name),
+  onPanelRefresh: (cb) => ipcRenderer.on('panel:refresh', () => cb()),
   // 프리셋
   listPresets: () => ipcRenderer.invoke('preset:list'),
   savePreset: (name) => ipcRenderer.invoke('preset:save', name),

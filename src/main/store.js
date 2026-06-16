@@ -22,7 +22,7 @@ let lastLoadError = null;  // 복호 실패로 백업·초기화됐는지(B-11)
 function defaultState() {
   return {
     version: 1,
-    settings: { agentId: '', hotkeyHideAll: 'Control+Alt+H', maskPII: true },
+    settings: { agentId: '', hotkeyHideAll: 'Control+Alt+H', maskPII: true, sections: ['공통', '요금제', '부가서비스', '기타'], panelAlwaysOnTop: false },
     cards: {},      // id -> card
     presets: {},    // name -> { [cardId]: {bounds, visible} }
   };
@@ -131,10 +131,21 @@ const api = {
   isKeyProtected: () => keyProtected,
   getLoadError: () => lastLoadError,
   getState: () => state,
+  // 가져오기(백업 복원): 전체 상태 교체. 누락 필드/설정 보정 후 즉시 저장.
+  replaceState: (incoming) => {
+    const next = Object.assign(defaultState(), incoming || {});
+    next.settings = Object.assign(defaultState().settings, (incoming && incoming.settings) || {});
+    if (!next.cards || typeof next.cards !== 'object') next.cards = {};
+    if (!next.presets || typeof next.presets !== 'object') next.presets = {};
+    state = next;
+    purgeExpired(state);
+    flush();
+    return state;
+  },
   getSettings: () => state.settings,
   updateSettings: (patch) => { Object.assign(state.settings, patch); scheduleSave(); return state.settings; },
 
-  listCards: () => Object.values(state.cards).map((c) => ({ id: c.id, title: c.title, type: c.type, visible: c.visible !== false })),
+  listCards: () => Object.values(state.cards).map((c) => ({ id: c.id, title: c.title, type: c.type, visible: c.visible !== false, section: c.section || '공통' })),
   getCard: (id) => state.cards[id] || null,
   addCard: (card) => { state.cards[card.id] = card; scheduleSave(); return card; },
   updateCard: (id, patch) => { const c = state.cards[id]; if (!c) return null; Object.assign(c, patch); c.updatedAt = Date.now(); scheduleSave(); return c; },

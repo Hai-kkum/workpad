@@ -3,15 +3,16 @@
 // 카드 = 프레임 없는 독립 BrowserWindow. Alt-Tab/작업표시줄 숨김은 숨은 "소유 창(owner)"의
 // 자식(parent)으로 만들어 처리(Windows에서 소유된 창은 Alt-Tab 목록에 안 나옴) — 네이티브 코드 불필요.
 
-const { app, BrowserWindow, ipcMain, clipboard, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, clipboard, globalShortcut, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const store = require('./store');
-const { maskPII } = require('../shared/pii'); // 검색 스니펫도 화면 가림 규칙과 동일하게 마스킹(SE-6)
+const { maskPII, hasPII } = require('../shared/pii'); // 검색 스니펫 마스킹(SE-6) + 백업 PII 검출
 
 const COLLAPSED_H = 30;
+const PANEL_HEAD_H = 34; // 패널 접힘 높이(커스텀 헤더만)
 const PRELOAD = path.join(__dirname, '..', 'preload', 'preload.js');
 const CARD_HTML = path.join(__dirname, '..', 'renderer', 'card.html');
 const PANEL_HTML = path.join(__dirname, '..', 'renderer', 'panel.html');
@@ -24,9 +25,62 @@ function logf(msg) {
 process.on('uncaughtException', (e) => logf('uncaughtException: ' + (e && e.stack || e)));
 process.on('unhandledRejection', (e) => logf('unhandledRejection: ' + (e && e.stack || e)));
 
-let ownerWin = null;   // 숨은 소유 창 (Alt-Tab 숨김용)
 let panelWin = null;   // 컨트롤 패널
 const cards = new Map(); // id -> BrowserWindow
+const cardOwners = new Map(); // id -> 카드별 숨은 owner 창. 카드마다 개별 owner라야 클릭 시 그 카드만 앞으로 옴(공유 owner면 그룹 전체가 올라옴).
+
+// 배포용 설정(보안팀 제어). 앱 폴더의 workpad.config.json. allowDataTransfer=false면 내보내기/가져오기 차단.
+let appConfig = { allowDataTransfer: true };
+function loadConfig() {
+  try {
+    const p = path.join(app.getAppPath(), 'workpad.config.json');
+    if (fs.existsSync(p)) appConfig = Object.assign(appConfig, JSON.parse(fs.readFileSync(p, 'utf8')));
+  } catch (e) { /* 설정 깨지면 기본값 유지 */ }
+}
+
+// ── 암호 보호 백업(PC 이전용) — scrypt KDF + AES-256-GCM. DPAPI와 무관해 다른 PC에서도 복원 가능. ──
+const SCRYPT = { N: 16384, r: 8, p: 1 };
+function exportBundle(stateObj, pass) {
+  const salt = crypto.randomBytes(16);
+  const key = crypto.scryptSync(String(pass), salt, 32, SCRYPT);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(JSON.stringify(stateObj), 'utf8'), cipher.final()]);
+  return JSON.stringify({
+    magic: 'WORKPAD-BACKUP', v: 1, kdf: 'scrypt', N: SCRYPT.N,
+    salt: salt.toString('base64'), iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'), data: enc.toString('base64'),
+  });
+}
+function importBundle(text, pass) {
+  const o = JSON.parse(text);
+  if (!o || o.magic !== 'WORKPAD-BACKUP') throw new Error('형식 아님');
+  const salt = Buffer.from(o.salt, 'base64');
+  const key = crypto.scryptSync(String(pass), salt, 32, { N: o.N || SCRYPT.N, r: 8, p: 1 });
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(o.iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(o.tag, 'base64'));
+  const dec = Buffer.concat([decipher.update(Buffer.from(o.data, 'base64')), decipher.final()]).toString('utf8'); // 암호 틀리면 여기서 throw
+  return JSON.parse(dec);
+}
+// 백업/이전 시 개인정보(주민·카드번호 추정) 검출 — 내보내기 전에 경고하기 위한 카운트.
+function scanPII(state) {
+  let count = 0; const hitCards = new Set();
+  const check = (v, id) => { if (v != null && v !== '' && hasPII(String(v))) { count++; if (id) hitCards.add(id); } };
+  for (const c of Object.values((state && state.cards) || {})) {
+    check(c.title, c.id);
+    check(c.content && c.content.text, c.id);
+    if (Array.isArray(c.lines)) c.lines.forEach((ln) => check(ln && ln.text, c.id));
+    if (Array.isArray(c.rows)) c.rows.forEach((r) => { if (Array.isArray(r)) r.forEach((cell) => check(cell, c.id)); });
+  }
+  return { count, cards: hitCards.size };
+}
+
+// 가져오기 후 카드 창 전체 재생성
+function reloadAllCards() {
+  for (const [, win] of cards) { if (!win.isDestroyed()) win.destroy(); }
+  cards.clear();
+  for (const c of Object.values(store.getState().cards)) createCardWindow(c, c.visible !== false);
+}
 
 // 단일 인스턴스 잠금: 아이콘/런처로 중복 실행 시 같은 암호화 파일에 두 인스턴스가 쓰는 손상 방지.
 const isPrimary = app.requestSingleInstanceLock();
@@ -56,12 +110,13 @@ function wireWindow(win, shouldShow, label) {
   setTimeout(() => doShow('timeout'), 1500);
 }
 
-function defaultCard(type) {
+function defaultCard(type, section) {
   const n = cards.size;
   const x = 90 + (n % 6) * 28;
   const y = 90 + (n % 6) * 28;
   const base = {
     id: newId(), type, alwaysOnTop: false, collapsed: false, visible: true,
+    section: section || '공통', // 생성 시점의 탭 섹션(없으면 공통)
     createdAt: Date.now(), updatedAt: Date.now(),
     format: { enabled: false, template: '[{날짜단축} {시간}] {내용}' },
   };
@@ -70,9 +125,9 @@ function defaultCard(type) {
   }
   if (type === 'callmemo') {
     return {
-      ...base, title: '콜 메모', ttlDays: 30,
+      ...base, title: '콜 메모', ttlDays: 30, timeDisplay: 'datetime',
       bounds: { x, y, width: 300, height: 260 },
-      format: { enabled: true, template: '[{시간}] {내용}' },
+      format: { enabled: true, template: '[{날짜단축} {시간}] {내용}' }, // 복사도 날짜+시간(화면 기본과 일치)
       lines: [],
     };
   }
@@ -87,12 +142,15 @@ function defaultCard(type) {
 
 function createCardWindow(card, show) {
   const collapsed = !!card.collapsed;
+  // 카드 전용 숨은 owner: Alt-Tab/작업표시줄 숨김은 유지하되, 각 카드가 독립 z-order 그룹이라 클릭 시 그 카드만 앞으로 옴.
+  const owner = new BrowserWindow({ width: 1, height: 1, show: false, skipTaskbar: true, focusable: false });
+  cardOwners.set(card.id, owner);
   const win = new BrowserWindow({
     x: card.bounds.x, y: card.bounds.y,
     width: card.bounds.width,
     height: collapsed ? COLLAPSED_H : card.bounds.height,
     minWidth: 160, minHeight: COLLAPSED_H,
-    frame: false, skipTaskbar: true, parent: ownerWin,
+    frame: false, skipTaskbar: true, parent: owner,
     alwaysOnTop: !!card.alwaysOnTop, show: false,
     maximizable: false, fullscreenable: false,
     backgroundColor: '#ffffff',
@@ -115,11 +173,19 @@ function createCardWindow(card, show) {
   }, 250);
   win.on('move', persist);
   win.on('resize', persist);
-  win.on('closed', () => cards.delete(card.id));
+  win.on('closed', () => {
+    cards.delete(card.id);
+    const o = cardOwners.get(card.id);
+    if (o && !o.isDestroyed()) o.destroy(); // 카드와 함께 전용 owner도 파기(누수 방지)
+    cardOwners.delete(card.id);
+  });
 
   cards.set(card.id, win);
   return win;
 }
+
+// 패널 밖(카드 ✕·전역 단축키·섹션 전환)에서 표시상태가 바뀌면 패널 목록을 다시 그리도록 알림(동기화).
+function notifyPanel() { if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('panel:refresh'); }
 
 function toggleAll() {
   const anyVisible = [...cards.values()].some((w) => !w.isDestroyed() && w.isVisible());
@@ -128,6 +194,7 @@ function toggleAll() {
     if (anyVisible) { win.hide(); store.setVisible(id, false); }
     else { win.show(); store.setVisible(id, true); }
   }
+  notifyPanel();
 }
 
 function applyHotkey(accel) {
@@ -137,8 +204,11 @@ function applyHotkey(accel) {
 }
 
 function createPanel() {
+  const aot = !!store.getSettings().panelAlwaysOnTop;
   panelWin = new BrowserWindow({
-    width: 300, height: 440, title: 'Workpad', show: false,
+    width: 300, height: 440, minWidth: 240, minHeight: PANEL_HEAD_H,
+    title: 'Workpad', show: false, frame: false, alwaysOnTop: aot, // 프레임리스 + 커스텀 헤더(item 5)
+    maximizable: false, fullscreenable: false,
     backgroundColor: '#ffffff',
     webPreferences: { preload: PRELOAD, contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
@@ -177,7 +247,7 @@ function registerIpc() {
   });
   ipcMain.handle('card:hide', (_e, id) => { // 카드 X = 숨김(데이터 유지, 복구 가능 — B-8)
     const win = cards.get(id);
-    if (win && !win.isDestroyed()) { win.hide(); store.setVisible(id, false); }
+    if (win && !win.isDestroyed()) { win.hide(); store.setVisible(id, false); notifyPanel(); }
   });
   // 헤더 수동 드래그(메인 측 기준 캡처). dragStart에서 크기·위치 1회 캡처 → dragMove는 그 기준에 델타만 적용
   // (크기 고정 → 창 커짐 방지, 렌더러 비동기 레이스 없음). 입력 검증 포함. dragEnd에서 최종 위치 즉시 저장.
@@ -206,7 +276,32 @@ function registerIpc() {
     if (Object.prototype.hasOwnProperty.call(patch, 'hotkeyHideAll')) applyHotkey(s.hotkeyHideAll);
     return s;
   });
-  ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), cardCount: cards.size, loadError: store.getLoadError() }));
+  ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), cardCount: cards.size, loadError: store.getLoadError(), allowDataTransfer: appConfig.allowDataTransfer !== false }));
+  // 암호 보호 내보내기(PC 이전/백업). 보안팀이 막아 배포하면(allowDataTransfer:false) 거부.
+  ipcMain.handle('data:export', async (_e, pass) => {
+    if (appConfig.allowDataTransfer === false) return { ok: false, reason: 'disabled' };
+    if (!pass || String(pass).length < 4) return { ok: false, reason: 'weak' };
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+    const res = await dialog.showSaveDialog(panelWin, { defaultPath: `workpad-backup-${stamp}.workpad`, filters: [{ name: 'Workpad Backup', extensions: ['workpad'] }] });
+    if (res.canceled || !res.filePath) return { ok: false, reason: 'canceled' };
+    try { fs.writeFileSync(res.filePath, exportBundle(store.getState(), pass), { mode: 0o600 }); return { ok: true, path: res.filePath }; }
+    catch (e) { logf('export error: ' + (e && e.stack || e)); return { ok: false, reason: 'write' }; }
+  });
+  ipcMain.handle('data:piiScan', () => scanPII(store.getState())); // 내보내기 전 PII 검출(읽기 전용 카운트)
+  ipcMain.handle('data:import', async (_e, pass) => {
+    if (appConfig.allowDataTransfer === false) return { ok: false, reason: 'disabled' };
+    const res = await dialog.showOpenDialog(panelWin, { properties: ['openFile'], filters: [{ name: 'Workpad Backup', extensions: ['workpad', 'json'] }] });
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, reason: 'canceled' };
+    let bundle;
+    try { bundle = importBundle(fs.readFileSync(res.filePaths[0], 'utf8'), pass); }
+    catch (e) { return { ok: false, reason: 'decrypt' }; } // 암호 틀림 또는 손상/형식 아님
+    if (!bundle || typeof bundle !== 'object' || typeof bundle.cards !== 'object') return { ok: false, reason: 'format' };
+    store.replaceState(bundle);
+    reloadAllCards();
+    notifyPanel();
+    return { ok: true, count: Object.keys(store.getState().cards).length };
+  });
   ipcMain.handle('env:get', () => ({ hostname: os.hostname() })); // 맥락 워터마크용 좌석/PC 식별(SE-7)
   ipcMain.handle('search', (_e, q) => {
     q = String(q || '').trim().toLowerCase();
@@ -236,20 +331,56 @@ function registerIpc() {
     }
     return out;
   });
+  // 패널 커스텀 헤더(프레임리스) 제어 — item 5
+  ipcMain.handle('panel:pin', () => {
+    const aot = !store.getSettings().panelAlwaysOnTop;
+    store.updateSettings({ panelAlwaysOnTop: aot });
+    if (panelWin && !panelWin.isDestroyed()) panelWin.setAlwaysOnTop(aot);
+    return aot;
+  });
+  ipcMain.handle('panel:collapse', (_e, collapsed) => {
+    if (!panelWin || panelWin.isDestroyed()) return;
+    if (collapsed) {
+      panelWin._expandedHeight = panelWin.getBounds().height;
+      panelWin.setResizable(false);
+      panelWin.setBounds({ height: PANEL_HEAD_H });
+    } else {
+      panelWin.setResizable(true);
+      panelWin.setBounds({ height: panelWin._expandedHeight || 440 });
+    }
+  });
+  ipcMain.handle('panel:minimize', () => { if (panelWin && !panelWin.isDestroyed()) panelWin.minimize(); });
+  ipcMain.handle('panel:close', () => { if (panelWin && !panelWin.isDestroyed()) panelWin.close(); });
+  ipcMain.handle('panel:getState', () => ({ alwaysOnTop: !!store.getSettings().panelAlwaysOnTop }));
   ipcMain.handle('panel:listCards', () => store.listCards());
-  ipcMain.handle('panel:createCard', (_e, type) => {
-    const card = defaultCard(['memo', 'callmemo', 'table'].includes(type) ? type : 'snippet');
+  ipcMain.handle('panel:createCard', (_e, type, section) => {
+    const card = defaultCard(['memo', 'callmemo', 'table'].includes(type) ? type : 'snippet', section);
     store.addCard(card);
     createCardWindow(card, true);
     return card.id;
   });
   ipcMain.handle('panel:focusCard', (_e, id) => {
     const win = cards.get(id);
-    if (win && !win.isDestroyed()) { store.setVisible(id, true); win.show(); win.focus(); }
+    if (win && !win.isDestroyed()) { store.setVisible(id, true); win.show(); win.focus(); notifyPanel(); }
   });
-  ipcMain.handle('panel:showAll', () => { for (const [id, win] of cards) if (!win.isDestroyed()) { win.show(); store.setVisible(id, true); } });
-  ipcMain.handle('panel:hideAll', () => { for (const [id, win] of cards) if (!win.isDestroyed()) { win.hide(); store.setVisible(id, false); } });
+  ipcMain.handle('panel:flashCard', (_e, id) => { // 패널 더블클릭 → 해당 카드 창 앞으로 + 흔들기/플래시 신호
+    const win = cards.get(id);
+    if (win && !win.isDestroyed()) { store.setVisible(id, true); win.show(); win.focus(); win.webContents.send('card:flash'); notifyPanel(); }
+  });
+  ipcMain.handle('panel:showAll', () => { for (const [id, win] of cards) if (!win.isDestroyed()) { win.show(); store.setVisible(id, true); } notifyPanel(); });
+  ipcMain.handle('panel:hideAll', () => { for (const [id, win] of cards) if (!win.isDestroyed()) { win.hide(); store.setVisible(id, false); } notifyPanel(); });
   ipcMain.handle('panel:toggleAll', () => toggleAll());
+  // 섹션 탭 전환: 해당 섹션 카드만 화면에 표시, 나머지 숨김(엄격 격리). 전체=모두. (item 3)
+  ipcMain.handle('panel:showSection', (_e, name) => {
+    for (const [id, win] of cards) {
+      if (win.isDestroyed()) continue;
+      const c = store.getCard(id);
+      const sect = (c && c.section) || '공통';
+      const show = name === '전체' || sect === name;
+      if (show) { win.show(); store.setVisible(id, true); } else { win.hide(); store.setVisible(id, false); }
+    }
+    notifyPanel();
+  });
   ipcMain.handle('preset:list', () => store.listPresets());
   ipcMain.handle('preset:save', (_e, name) => {
     const snap = {};
@@ -283,6 +414,13 @@ app.whenReady().then(() => {
   try {
     if (!isPrimary) return; // 2차 인스턴스는 창을 만들지 않고 종료
     logf('app ready: start');
+    loadConfig();
+    logf('config: allowDataTransfer=' + (appConfig.allowDataTransfer !== false));
+    // 모든 창이 프레임리스라 메뉴바는 표시되지 않음. 단, 텍스트 단축키(Ctrl+C/V/X/A/Z)는 편집 역할 메뉴로 보장.
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { role: 'editMenu' },
+      ...(isDev ? [{ role: 'viewMenu' }] : []),
+    ]));
     store.init();
     logf('store init ok, keyProtected=' + store.isKeyProtected());
 
@@ -291,8 +429,7 @@ app.whenReady().then(() => {
       wc.on('will-navigate', (e) => e.preventDefault());
     });
 
-    ownerWin = new BrowserWindow({ width: 100, height: 100, show: false, skipTaskbar: true });
-    registerIpc();
+    registerIpc(); // owner 창은 카드 생성 시 카드별로 만든다(createCardWindow)
     createPanel();
 
     const saved = Object.values(store.getState().cards);
