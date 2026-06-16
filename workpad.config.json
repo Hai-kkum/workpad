@@ -1,0 +1,4 @@
+{
+  "_comment": "배포용 설정 파일(보안팀 제어). allowDataTransfer 를 false 로 두고 배포하면 데이터 내보내기/가져오기(백업·PC 이전) 기능이 비활성화됩니다(UI 숨김 + 내부 IPC 거부). 사용자는 앱 내에서 다시 켤 수 없습니다.",
+  "allowDataTransfer": true
+}

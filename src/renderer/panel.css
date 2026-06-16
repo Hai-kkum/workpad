@@ -1,11 +1,36 @@
 html, body { margin: 0; }
 body {
   font: 13px/1.5 system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
-  color: #1f2328; background: #fff; padding: 0 12px 12px;
+  color: #1f2328; background: #fff; overflow: hidden;
 }
-.head { display: flex; align-items: baseline; gap: 8px; padding: 12px 0 8px; }
-.logo { font-size: 16px; font-weight: 600; }
+/* 프레임리스 커스텀 헤더 = 창 이동(drag) 영역. 버튼은 no-drag. (item 5) */
+.head {
+  display: flex; align-items: center; gap: 6px; height: 34px; box-sizing: border-box;
+  padding: 0 4px 0 12px; background: #f3f4f6; border-bottom: 1px solid #e3e5e8;
+  -webkit-app-region: drag; user-select: none;
+}
+.logo { font-size: 14px; font-weight: 600; }
 .ver { font-size: 11px; color: #9aa1ab; }
+.hspace { flex: 1; }
+.pbtn {
+  -webkit-app-region: no-drag; border: 0; background: transparent; color: #6b7280;
+  font-size: 12px; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; line-height: 1; padding: 0;
+}
+.pbtn:hover { background: #e5e7eb; color: #111; }
+.pbtn.active { color: #2563eb; background: #dbeafe; }
+.content { padding: 0 12px 12px; height: calc(100vh - 34px); box-sizing: border-box; overflow-y: auto; }
+body.collapsed .content { display: none; }
+
+/* 섹션 탭(패널 목록 필터 — item 4) */
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.tab {
+  font-size: 11px; padding: 2px 9px; border: 1px solid #d7dbe0; background: #fff; border-radius: 999px; cursor: pointer;
+}
+.tab:hover { background: #f3f4f6; }
+.tab.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+.tab.addtab { color: #9aa1ab; border-style: dashed; }
+.cardrow .sectsel { flex: 0 0 auto; font-size: 10px; border: 1px solid #e3e5e8; border-radius: 4px; padding: 1px 2px; color: #8a909a; background: #fff; }
+.cardrow:hover .sectsel { color: #374151; border-color: #d7dbe0; }
 
 .sec { padding: 8px 0; border-top: 1px solid #f0f1f3; }
 .lbl { font-size: 11px; font-weight: 500; color: #6b7280; margin-bottom: 6px; }

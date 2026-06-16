@@ -1,4 +1,15 @@
 html, body { margin: 0; height: 100%; }
+
+/* 패널 더블클릭 신호: 짧게 흔들기 + 파란 테두리 플래시(위치 찾기) */
+@keyframes wpflash {
+  0%, 100% { transform: translateX(0); box-shadow: inset 0 0 0 0 rgba(37, 99, 235, 0); }
+  10%      { transform: translateX(-5px); box-shadow: inset 0 0 0 3px rgba(37, 99, 235, .9); }
+  30%      { transform: translateX(5px); }
+  50%      { transform: translateX(-4px); box-shadow: inset 0 0 0 3px rgba(37, 99, 235, .7); }
+  70%      { transform: translateX(4px); }
+  85%      { transform: translateX(-2px); box-shadow: inset 0 0 0 2px rgba(37, 99, 235, .4); }
+}
+html.flash body { animation: wpflash .6s ease; }
 body {
   font: 13px/1.5 system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
   color: #1f2328; background: #fff;
@@ -59,6 +70,11 @@ body {
 .row.copied .copy { visibility: visible; color: #16a34a; }
 
 .ghost .text:empty:before { content: attr(data-ph); color: #b6bcc5; }
+.ghost .gpaste {
+  flex: 0 0 auto; border: 0; background: transparent; color: #9aa1ab; cursor: pointer;
+  font-size: 13px; padding: 1px 4px; border-radius: 4px; line-height: 1;
+}
+.ghost .gpaste:hover { background: #e5e7eb; color: #2563eb; }
 
 /* 마스킹된(가려진) 값: 모노폰트 + 옅은 음영으로 "가려진 상태"임을 시각화. 클릭복사=원문은 그대로. */
 .row .text.masked, .tbl td.masked { font-family: ui-monospace, Consolas, monospace; background: #f3f4f6; color: #5b6470; }
@@ -73,7 +89,7 @@ body {
   display: flex; flex-wrap: wrap; align-content: center; justify-content: center;
   gap: 28px 52px; transform: rotate(-24deg) scale(1.5); transform-origin: center;
 }
-#watermark span { color: rgba(220, 38, 38, .28); font-size: 12px; font-weight: 700; white-space: nowrap; letter-spacing: .3px; }
+#watermark span { color: rgba(148, 60, 60, .12); font-size: 11px; font-weight: 600; white-space: nowrap; letter-spacing: .3px; }
 
 /* 표 카드 */
 .twrap { overflow: auto; }
