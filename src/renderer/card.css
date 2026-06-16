@@ -60,7 +60,20 @@ body {
 
 .ghost .text:empty:before { content: attr(data-ph); color: #b6bcc5; }
 
+/* 마스킹된(가려진) 값: 모노폰트 + 옅은 음영으로 "가려진 상태"임을 시각화. 클릭복사=원문은 그대로. */
+.row .text.masked, .tbl td.masked { font-family: ui-monospace, Consolas, monospace; background: #f3f4f6; color: #5b6470; }
+.tbl td.masked { background: #f3f4f6; }
+.row.revealed .text.masked, .tbl td.masked.revealed { background: #fff7ed; color: #1f2328; }
+
 .hint { padding: 6px 8px; font-size: 11px; color: #9aa1ab; }
+
+/* 맥락 워터마크: 👁로 PII를 공개하는 순간에만 표시(SE-7). 재마스킹 시 사라짐. 클릭 통과(pointer-events:none). */
+#watermark {
+  position: fixed; inset: 0; z-index: 9999; pointer-events: none; overflow: hidden;
+  display: flex; flex-wrap: wrap; align-content: center; justify-content: center;
+  gap: 28px 52px; transform: rotate(-24deg) scale(1.5); transform-origin: center;
+}
+#watermark span { color: rgba(220, 38, 38, .28); font-size: 12px; font-weight: 700; white-space: nowrap; letter-spacing: .3px; }
 
 /* 표 카드 */
 .twrap { overflow: auto; }
