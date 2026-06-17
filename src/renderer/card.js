@@ -304,7 +304,7 @@ function renderTable(body) {
 
   const ctrl = document.createElement('div');
   ctrl.className = 'tctrl';
-  const mkBtn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.addEventListener('click', fn); return b; };
+  const mkBtn = (label, fn, title) => { const b = document.createElement('button'); b.textContent = label; if (title) b.title = title; b.addEventListener('click', fn); return b; };
   const wrap = document.createElement('div'); wrap.className = 'twrap';
 
   const editCell = (td, ri, ci) => {
@@ -321,13 +321,36 @@ function renderTable(body) {
     td.addEventListener('blur', commit, { once: true });
   };
 
+  const delRow = (ri) => { if (card.rows.length <= 1) return tip('행이 하나뿐입니다.'); card.rows.splice(ri, 1); saveRows(); draw(); };
+  const delCol = (ci) => { if (cols() <= 1) return tip('열이 하나뿐입니다.'); card.rows.forEach((r) => { if (ci < r.length) r.splice(ci, 1); }); saveRows(); draw(); };
+
   const draw = () => {
     wrap.innerHTML = '';
     maskEls.length = 0; // 표 전체 재구성 — 셀 레지스트리 초기화(누수 방지)
     const n = cols();
     const table = document.createElement('table'); table.className = 'tbl';
+
+    // 맨 위: 열 삭제 핸들 행(모서리 빈칸 + 열마다 ✕). 표에 마우스를 올리면 나타남.
+    const headtr = document.createElement('tr'); headtr.className = 'ctrlrow';
+    headtr.appendChild(Object.assign(document.createElement('td'), { className: 'corner' }));
+    for (let ci = 0; ci < n; ci++) {
+      const ch = document.createElement('td'); ch.className = 'coldel';
+      const cc = ci;
+      const b = document.createElement('button'); b.className = 'delbtn'; b.textContent = '✕'; b.title = '이 열 삭제';
+      b.addEventListener('click', () => delCol(cc));
+      ch.appendChild(b); headtr.appendChild(ch);
+    }
+    table.appendChild(headtr);
+
     card.rows.forEach((row, ri) => {
       const tr = document.createElement('tr');
+      // 맨 왼쪽: 행 삭제 핸들(이 행에 마우스를 올리면 나타남).
+      const gut = document.createElement('td'); gut.className = 'rowdel';
+      const rr = ri;
+      const rb = document.createElement('button'); rb.className = 'delbtn'; rb.textContent = '✕'; rb.title = '이 행 삭제';
+      rb.addEventListener('click', () => delRow(rr));
+      gut.appendChild(rb); tr.appendChild(gut);
+
       for (let ci = 0; ci < n; ci++) {
         const td = document.createElement('td');
         td.setAttribute('contenteditable', 'false');
@@ -339,10 +362,14 @@ function renderTable(body) {
           if (td.getAttribute('contenteditable') === 'true') return;       // 편집 중 제외
           if (Math.hypot(e.clientX - px, e.clientY - py) >= 4) return;     // 드래그면 범위 선택
           if (!getSelection().isCollapsed) return;
-          window.api.copyText(card.rows[cr] && card.rows[cr][cc] != null ? card.rows[cr][cc] : ''); // 원문 복사
-          td.classList.add('copied'); setTimeout(() => td.classList.remove('copied'), 800);
+          const val = card.rows[cr] && card.rows[cr][cc] != null ? String(card.rows[cr][cc]) : '';
+          if (val.trim() === '') { editCell(td, cr, cc); return; }         // 빈 칸=클릭하면 바로 입력(편의)
+          td._copyTimer = setTimeout(() => {                               // 채워진 칸=원문 복사(더블클릭이면 취소됨)
+            window.api.copyText(val);
+            td.classList.add('copied'); setTimeout(() => td.classList.remove('copied'), 800);
+          }, 180);
         });
-        td.addEventListener('dblclick', () => editCell(td, ri, ci));
+        td.addEventListener('dblclick', () => { clearTimeout(td._copyTimer); editCell(td, cr, cc); });
         td.addEventListener('input', () => { while (card.rows[ri].length <= ci) card.rows[ri].push(''); card.rows[ri][ci] = td.textContent; saveRows(); }); // 입력 즉시 저장(편집 중 원문)
         tr.appendChild(td);
       }
@@ -351,30 +378,87 @@ function renderTable(body) {
     wrap.appendChild(table);
   };
 
-  ctrl.appendChild(mkBtn('+행', () => { card.rows.push(new Array(cols()).fill('')); saveRows(); draw(); }));
-  ctrl.appendChild(mkBtn('+열', () => { const c = cols(); card.rows.forEach((r) => { while (r.length < c) r.push(''); r.push(''); }); saveRows(); draw(); }));
-  ctrl.appendChild(mkBtn('표 붙여넣기', async () => {
-    const t = await window.api.readClipboard();
-    if (!t) return;
-    const MAX_ROWS = 500, MAX_COLS = 50; // 크기 상한(P2: 거대 클립보드로 인한 프리즈 방지)
-    let lines = t.replace(/\r/g, '').split('\n'); // 원문 저장(비파괴) — 화면은 셀이 마스킹
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  const HINT = '빈 칸=클릭 입력 · 채워진 칸 클릭=복사 / 더블클릭=수정 · 행 왼쪽·열 위 ✕=삭제';
+  hint.textContent = HINT;
+  let undoRows = null;
+  const tip = (msg, ms) => { hint.textContent = msg; setTimeout(() => { if (!undoRows) hint.textContent = HINT; }, ms || 3000); };
+  const dims = (rows) => rows.length + '×' + rows.reduce((m, r) => Math.max(m, r.length), 1);
+
+  // 클립보드 TSV 파싱(크기 상한으로 거대 붙여넣기 프리즈 방지 P2).
+  const parseTSV = (t) => {
+    let lines = t.replace(/\r/g, '').split('\n');
     if (lines.length && lines[lines.length - 1] === '') lines.pop();
-    let truncated = lines.length > MAX_ROWS;
-    if (truncated) lines = lines.slice(0, MAX_ROWS);
-    const parsed = lines.map((l) => { const cells = l.split('\t'); if (cells.length > MAX_COLS) { truncated = true; return cells.slice(0, MAX_COLS); } return cells; });
-    if (parsed.length) {
-      card.rows = parsed; saveRows(); draw();
-      if (truncated) { const h = document.querySelector('.hint'); if (h) h.textContent = `※ 표가 커서 ${MAX_ROWS}행·${MAX_COLS}열로 잘렸습니다`; }
+    return lines.slice(0, 500).map((l) => l.split('\t').slice(0, 50));
+  };
+  // 엑셀/CRM은 표를 HTML(table)로도 클립보드에 올림 — 차원이 가장 정확하므로 우선 사용, 실패 시 TSV 텍스트 폴백.
+  const parseHTMLTable = (html) => {
+    if (!html || !/<table[\s>]/i.test(html)) return null;
+    let doc; try { doc = new DOMParser().parseFromString(html, 'text/html'); } catch (_) { return null; }
+    const table = doc.querySelector('table'); if (!table) return null;
+    const rows = [];
+    table.querySelectorAll('tr').forEach((tr) => {
+      const cells = [];
+      tr.querySelectorAll('th,td').forEach((c) => cells.push((c.textContent || '').replace(/ /g, ' ').trim()));
+      if (cells.length) rows.push(cells);
+    });
+    return rows.length ? rows.slice(0, 500).map((r) => r.slice(0, 50)) : null;
+  };
+  const getClipTable = async () => {
+    try { const r = parseHTMLTable(await window.api.readClipboardHTML()); if (r && r.length) return r; } catch (_) {}
+    const t = await window.api.readClipboard();
+    if (t && /[\t\n]/.test(t)) { const p = parseTSV(t); if (p.length) return p; }
+    return null;
+  };
+
+  const isEmpty = () => card.rows.every((r) => r.every((c) => c == null || String(c).trim() === ''));
+  const showResult = (msg) => {
+    hint.textContent = msg;
+    const undo = document.createElement('button');
+    undo.className = 'tundo'; undo.textContent = '되돌리기';
+    undo.addEventListener('click', () => { if (!undoRows) return; card.rows = undoRows; undoRows = null; saveRows(); draw(); hint.textContent = HINT; });
+    hint.appendChild(undo);
+  };
+  // mode: 'replace'=전체 교체(확인) / 'append'=맨 아래 이어붙이기. 둘 다 1단계 되돌리기 제공.
+  const doPaste = async (mode) => {
+    try { window.focus(); } catch (_) {}
+    hint.textContent = '클립보드 읽는 중…'; // 즉시 피드백(버튼이 눌렸음을 보장 — 무반응/못읽음 구분)
+    const rows = await getClipTable();
+    if (!rows) return tip('표를 못 읽었습니다 — 엑셀에서 “셀 범위”를 복사했는지 확인하세요. (한 칸만 채우려면 셀 더블클릭)', 4000);
+    if (mode === 'append') {
+      undoRows = card.rows.map((r) => r.slice());
+      if (isEmpty()) card.rows = []; // 빈 기본표면 교체처럼
+      rows.forEach((r) => card.rows.push(r.slice()));
+      const c = cols(); card.rows.forEach((r) => { while (r.length < c) r.push(''); }); // 열 수 정렬
+      saveRows(); draw(); showResult('아래에 ' + dims(rows) + ' 추가했습니다 · ');
+    } else {
+      if (!isEmpty() && !window.confirm('현재 표를 붙여넣은 내용으로 바꿉니다.\n(되돌리기로 한 번 복구 가능)\n\n계속할까요?')) return;
+      undoRows = card.rows.map((r) => r.slice());
+      card.rows = rows.map((r) => r.slice()); saveRows(); draw();
+      showResult('표를 ' + dims(rows) + '로 바꿨습니다 · ');
     }
-  }));
+  };
+
+  ctrl.appendChild(mkBtn('+행', () => { card.rows.push(new Array(cols()).fill('')); saveRows(); draw(); }, '맨 아래에 빈 행 추가 (개별 행 삭제는 행 왼쪽 ✕)'));
+  ctrl.appendChild(mkBtn('+열', () => { const c = cols(); card.rows.forEach((r) => { while (r.length < c) r.push(''); r.push(''); }); saveRows(); draw(); }, '오른쪽에 빈 열 추가 (개별 열 삭제는 열 위 ✕)'));
+  ctrl.appendChild(mkBtn('표 붙여넣기', () => doPaste('replace'), '클립보드의 표로 이 표를 교체 · Ctrl+V로도 가능'));
+  ctrl.appendChild(mkBtn('아래 추가', () => doPaste('append'), '클립보드의 표를 맨 아래에 이어붙이기'));
 
   body.appendChild(ctrl);
   body.appendChild(wrap);
+  body.appendChild(hint);
   draw();
 
-  const hint = document.createElement('div');
-  hint.className = 'hint'; hint.textContent = '셀 클릭=복사 · 더블클릭=수정 · 드래그+Ctrl+C=범위(엑셀 호환)';
-  body.appendChild(hint);
+  // Ctrl+V: 셀 편집 중이면 셀 안에 붙여넣기(기본). 아니면 표 전체 교체.
+  // paste 이벤트는 편집요소 포커스가 없으면 안 떠서 keydown으로 처리(창 포커스만 있으면 동작).
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'v') return;
+    const ae = document.activeElement;
+    if (ae && ae.getAttribute && ae.getAttribute('contenteditable') === 'true') return;
+    e.preventDefault();
+    doPaste('replace');
+  });
 }
 
 function setupBar() {
