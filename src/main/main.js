@@ -125,7 +125,7 @@ function defaultCard(type, section) {
   }
   if (type === 'callmemo') {
     return {
-      ...base, title: '콜 메모', ttlDays: 30, timeDisplay: 'datetime',
+      ...base, title: '기록 메모', ttlDays: 30, timeDisplay: 'datetime',
       bounds: { x, y, width: 300, height: 260 },
       format: { enabled: true, template: '[{날짜단축} {시간}] {내용}' }, // 복사도 날짜+시간(화면 기본과 일치)
       lines: [],
@@ -133,6 +133,9 @@ function defaultCard(type, section) {
   }
   if (type === 'table') {
     return { ...base, title: '표', bounds: { x, y, width: 320, height: 240 }, rows: [['항목', '값'], ['', '']] };
+  }
+  if (type === 'todo') {
+    return { ...base, title: '할일', bounds: { x, y, width: 260, height: 220 }, lines: [] };
   }
   return {
     ...base, title: '상용구', bounds: { x, y, width: 280, height: 220 },
@@ -186,6 +189,17 @@ function createCardWindow(card, show) {
 
 // 패널 밖(카드 ✕·전역 단축키·섹션 전환)에서 표시상태가 바뀌면 패널 목록을 다시 그리도록 알림(동기화).
 function notifyPanel() { if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('panel:refresh'); }
+
+// 종료 시 모든 카드 창의 현재 크기·위치를 즉시 저장 — 리사이즈 디바운스(250ms)가 못 따라잡고 앱이 닫혀 크기가 안 남는 문제 방지.
+function saveAllBounds() {
+  for (const [id, win] of cards) {
+    if (win.isDestroyed()) continue;
+    const b = win.getBounds();
+    const prev = store.getCard(id);
+    const height = win._collapsed && prev && prev.bounds ? prev.bounds.height : b.height;
+    store.updateBounds(id, { x: b.x, y: b.y, width: b.width, height });
+  }
+}
 
 function toggleAll() {
   const anyVisible = [...cards.values()].some((w) => !w.isDestroyed() && w.isVisible());
@@ -366,7 +380,7 @@ function registerIpc() {
   ipcMain.handle('panel:getState', () => ({ alwaysOnTop: !!store.getSettings().panelAlwaysOnTop }));
   ipcMain.handle('panel:listCards', () => store.listCards());
   ipcMain.handle('panel:createCard', (_e, type, section) => {
-    const card = defaultCard(['memo', 'callmemo', 'table'].includes(type) ? type : 'snippet', section);
+    const card = defaultCard(['memo', 'callmemo', 'table', 'todo'].includes(type) ? type : 'snippet', section);
     store.addCard(card);
     const win = createCardWindow(card, true);
     win.once('show', () => { try { win.focus(); } catch (_) {} }); // 새로 만든 카드는 바로 포커스 → 생성 직후 붙여넣기/입력 즉시 가능
@@ -462,5 +476,6 @@ app.whenReady().then(() => {
   }
 });
 
+app.on('before-quit', () => { saveAllBounds(); }); // 창이 닫히기 전에 크기 저장 — will-quit은 카드 창이 이미 닫힌(cards 비워진) 뒤라 늦음(Codex P2-2)
 app.on('will-quit', () => { globalShortcut.unregisterAll(); store.flush(); });
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });

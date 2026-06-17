@@ -9,26 +9,20 @@ const ID = new URLSearchParams(location.search).get('id');
 let card = null;
 let settings = { agentId: '' };
 let fmtOpen = false; // 복사 서식(#) 박스 열림 상태(재렌더에도 유지)
+let setCardCollapsed = null; // 접기 상태 제어(setupBar에서 설정) — 패널 더블클릭 신호로 펼치기에 사용
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const saveCard = debounce((patch) => window.api.updateCard(ID, patch), 300);
 const persistLines = () => saveCard({ lines: card.lines });
 
 function pad(n) { return String(n).padStart(2, '0'); }
-// 콜메모 줄 시각 표기. 카드별 옵션(time=시간만 / datetime=날짜+시간 / custom=토큰 서식). 기본 datetime.
+// 기록메모 줄 화면 말머리(시각). 복사 서식과 독립적으로 컴팩트하게 — time=시간만 / 그 외=날짜+시간(기본).
+// 사용자ID·전체날짜 등은 화면 말머리에 넣지 않고 복사 스탬프(card.format.template)에만 → 내용 가로폭 확보.
 function fmtLineTime(t) {
   const d = new Date(t);
-  const mode = card.timeDisplay || 'datetime';
   const date = `${pad(d.getMonth() + 1)}/${pad(d.getDate())}`;
   const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  if (mode === 'time') return time;
-  if (mode === 'custom') {
-    const map = { '{날짜}': `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, '{날짜단축}': date, '{시간}': time };
-    let s = card.timeTemplate || '{날짜단축} {시간}';
-    for (const k of Object.keys(map)) s = s.split(k).join(map[k]);
-    return s;
-  }
-  return `${date} ${time}`; // datetime
+  return (card.timeDisplay === 'time') ? time : `${date} ${time}`;
 }
 
 // when: 이 줄의 기준 시각(콜메모는 line.t — 줄이 적힌 실제 시각). 없으면 시각기준(통화시작/복사시점) 폴백(상용구).
@@ -40,7 +34,8 @@ function applyStamp(text, fmt, raw, when) {
     '{날짜}': `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
     '{날짜단축}': `${pad(d.getMonth() + 1)}/${pad(d.getDate())}`,
     '{시간}': `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-    '{상담사ID}': fmt.agentId || settings.agentId || '',
+    '{사용자ID}': fmt.agentId || settings.agentId || '',
+    '{상담사ID}': fmt.agentId || settings.agentId || '', // 옛 서식 호환(기존 카드의 {상담사ID}도 계속 치환)
     '{내용}': text,
   };
   let s = fmt.template || '{내용}';
@@ -84,7 +79,7 @@ function setReveal(on) {
   else hideWatermark();
   refreshMask();
 }
-// SE-7 맥락 워터마크: 공개하는 순간에만 상담사ID·PC명·시각을 옅게 타일링. 재마스킹 시 제거.
+// SE-7 맥락 워터마크: 공개하는 순간에만 사용자ID·PC명·시각을 옅게 타일링. 재마스킹 시 제거.
 function showWatermark() {
   hideWatermark();
   const who = settings.agentId || '미지정';
@@ -113,6 +108,15 @@ async function copyRow(text, raw, row, btn, when) {
 function makeRow(line) {
   const row = document.createElement('div');
   row.className = 'row';
+
+  if (card.type === 'todo') { // 할일: 줄마다 체크박스(완료 토글). 행 클릭/복사와 분리되도록 이벤트 차단.
+    const chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.className = 'todochk'; chk.checked = !!line.done;
+    if (line.done) row.classList.add('done');
+    ['pointerdown', 'pointerup', 'click', 'dblclick'].forEach((ev) => chk.addEventListener(ev, (e) => e.stopPropagation()));
+    chk.addEventListener('change', () => { line.done = chk.checked; row.classList.toggle('done', chk.checked); persistLines(); });
+    row.appendChild(chk);
+  }
 
   if (card.type === 'callmemo' && line.t) {
     const time = document.createElement('span');
@@ -178,49 +182,55 @@ function enterEdit(text, line, row) {
 function renderList(body) {
   body.innerHTML = '';
   maskEls.length = 0; // 재렌더 시 표시 요소 레지스트리 초기화
+  document.getElementById('fmt').style.display = card.type === 'todo' ? 'none' : ''; // 할일은 복사 서식 불필요
 
   // 복사 서식 편집 박스 (목록형 카드만). 재렌더(옵션 변경 등) 후에도 열림 상태 유지(fmtOpen).
   const fmtbox = document.createElement('div');
-  fmtbox.className = 'fmtbox'; fmtbox.hidden = !fmtOpen;
+  fmtbox.className = 'fmtbox'; fmtbox.hidden = !fmtOpen || card.type === 'todo';
   const isCall = card.type === 'callmemo';
+  // 화면 말머리(.time)와 복사 서식을 분리: 복사 서식(fmtTpl)은 모든 토큰 자유 편집, 화면 말머리는 컴팩트(시간/날짜+시간)만.
   fmtbox.innerHTML =
     '<label><input type="checkbox" id="copyOn"> 줄 클릭으로 복사</label>' +
     '<label><input type="checkbox" id="fmtOn"> 복사 시 서식 적용</label>' +
     '<input class="tpl" id="fmtTpl" placeholder="[{날짜단축} {시간}] {내용}">' +
+    '<div class="tokens" id="tokchips"></div>' +
     (isCall ?
-      '<label class="tb">시각 표시 <select id="timeDisp"><option value="time">시간만</option><option value="datetime">날짜+시간</option><option value="custom">커스텀</option></select></label>' +
-      '<input class="tpl" id="timeTpl" placeholder="{날짜단축} {시간}">'
-      : '<label class="tb">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="callStart">통화 시작</option></select></label>') +
-    '<div class="tokens">토큰: {날짜} {날짜단축} {시간} {상담사ID} {내용} · Shift+클릭=원문</div>';
+      '<label class="tb">화면 말머리 <select id="timeDisp"><option value="time">시간만</option><option value="datetime">날짜+시간</option></select></label>'
+      : '<label class="tb">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="callStart">통화 시작</option></select></label>');
   body.appendChild(fmtbox);
   const copyOnBox = fmtbox.querySelector('#copyOn');
   const fmtOn = fmtbox.querySelector('#fmtOn');
   const fmtTpl = fmtbox.querySelector('#fmtTpl');
+  const timeDisp = fmtbox.querySelector('#timeDisp');
   copyOnBox.checked = card.copyMode !== false;
   fmtOn.checked = !!card.format.enabled;
   fmtTpl.value = card.format.template || '';
-  copyOnBox.addEventListener('change', () => { card.copyMode = copyOnBox.checked; saveCard({ copyMode: card.copyMode }); renderList(body); }); // 토글 시 목록 재구성
+  copyOnBox.addEventListener('change', () => { card.copyMode = copyOnBox.checked; saveCard({ copyMode: card.copyMode }); renderList(body); });
   fmtOn.addEventListener('change', () => { card.format.enabled = fmtOn.checked; saveCard({ format: card.format }); });
-  fmtTpl.addEventListener('input', () => { card.format.template = fmtTpl.value; saveCard({ format: card.format }); }); // 수동 템플릿 직접 편집(고급)
+  fmtTpl.addEventListener('input', () => { card.format.template = fmtTpl.value; saveCard({ format: card.format }); }); // 복사 서식 직접 편집(화면 말머리와 독립)
   const fmtBasis = fmtbox.querySelector('#fmtBasis');
   if (fmtBasis) { fmtBasis.value = card.format.timeBasis || 'now'; fmtBasis.addEventListener('change', () => { card.format.timeBasis = fmtBasis.value; saveCard({ format: card.format }); }); }
-  const timeDisp = fmtbox.querySelector('#timeDisp'); // 콜메모 시각 표시 옵션(item 3) — 복사 템플릿의 시각 부분과 동기화해 화면=복사 일치
-  if (timeDisp) {
-    const timeTpl = fmtbox.querySelector('#timeTpl');
-    const timePart = (mode) => mode === 'time' ? '{시간}' : (mode === 'custom' ? (card.timeTemplate || '{날짜단축} {시간}') : '{날짜단축} {시간}');
-    const syncTemplate = (mode) => { card.format.template = '[' + timePart(mode) + '] {내용}'; card.format.enabled = true; fmtTpl.value = card.format.template; fmtOn.checked = true; };
-    timeDisp.value = card.timeDisplay || 'datetime';
-    timeTpl.value = card.timeTemplate || '';
-    timeTpl.style.display = timeDisp.value === 'custom' ? '' : 'none';
-    timeDisp.addEventListener('change', () => {
-      card.timeDisplay = timeDisp.value;
-      timeTpl.style.display = timeDisp.value === 'custom' ? '' : 'none';
-      syncTemplate(timeDisp.value);
-      saveCard({ timeDisplay: card.timeDisplay, format: card.format });
-      renderList(body); // 표시 갱신
-    });
-    timeTpl.addEventListener('input', () => { card.timeTemplate = timeTpl.value; if (timeDisp.value === 'custom') syncTemplate('custom'); saveCard({ timeTemplate: card.timeTemplate, format: card.format }); }); // 저장만
-    timeTpl.addEventListener('change', () => renderList(body)); // 입력 완료 시 표시 갱신
+
+  // 토큰 칩: 클릭으로 복사 서식(fmtTpl)에 삽입 — '{ }' 직접 입력 부담 제거. 화면 말머리는 아래 select로 별도(독립).
+  const tokchips = fmtbox.querySelector('#tokchips');
+  const insertToken = (tok) => {
+    fmtTpl.focus();
+    const s = fmtTpl.selectionStart != null ? fmtTpl.selectionStart : fmtTpl.value.length;
+    const e = fmtTpl.selectionEnd != null ? fmtTpl.selectionEnd : fmtTpl.value.length;
+    fmtTpl.value = fmtTpl.value.slice(0, s) + tok + fmtTpl.value.slice(e);
+    const pos = s + tok.length; try { fmtTpl.setSelectionRange(pos, pos); } catch (_) {}
+    fmtTpl.dispatchEvent(new Event('input', { bubbles: true })); // 저장 핸들러 재사용
+  };
+  const tlbl = document.createElement('span'); tlbl.className = 'tklbl'; tlbl.textContent = '넣기'; tokchips.appendChild(tlbl);
+  ['{날짜단축}', '{시간}', '{날짜}', '{사용자ID}', '{내용}'].forEach((t) => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'tok'; b.textContent = t;
+    b.addEventListener('click', (ev) => { ev.preventDefault(); insertToken(t); });
+    tokchips.appendChild(b);
+  });
+
+  if (timeDisp) { // 화면 말머리(.time)만 제어 — 복사 서식과 독립. 컴팩트하게 시간/날짜+시간만(기존 custom은 날짜+시간으로 표시).
+    timeDisp.value = (card.timeDisplay === 'time') ? 'time' : 'datetime';
+    timeDisp.addEventListener('change', () => { card.timeDisplay = timeDisp.value; saveCard({ timeDisplay: card.timeDisplay }); renderList(body); });
   }
   document.getElementById('fmt').onclick = () => { fmtOpen = !fmtOpen; fmtbox.hidden = !fmtOpen; };
 
@@ -244,6 +254,7 @@ function renderList(body) {
   const addLine = (txt) => {
     const ln = { text: txt };
     if (card.type === 'callmemo') ln.t = Date.now();
+    if (card.type === 'todo') ln.done = false;
     card.lines.push(ln);
     list.insertBefore(makeRow(ln), ghost);
     persistLines();
@@ -302,75 +313,115 @@ function renderTable(body) {
   const saveRows = () => saveCard({ rows: card.rows });
   const cols = () => card.rows.reduce((m, r) => Math.max(m, r.length), 1);
 
-  const ctrl = document.createElement('div');
-  ctrl.className = 'tctrl';
+  let editMode = false; // 보기(기본)=클릭 복사 / 편집=클릭 수정. 한 모드에 한 동작만 → 예측 가능.
+
   const mkBtn = (label, fn, title) => { const b = document.createElement('button'); b.textContent = label; if (title) b.title = title; b.addEventListener('click', fn); return b; };
+  const ctrl = document.createElement('div'); ctrl.className = 'tctrl';
   const wrap = document.createElement('div'); wrap.className = 'twrap';
 
-  const editCell = (td, ri, ci) => {
-    td.setAttribute('contenteditable', 'true');
-    td.textContent = card.rows[ri][ci] != null ? card.rows[ri][ci] : ''; // 편집은 원문 대상
-    td.focus(); caretEnd(td);
-    const commit = () => {
-      td.setAttribute('contenteditable', 'false');
-      while (card.rows[ri].length <= ci) card.rows[ri].push('');
-      card.rows[ri][ci] = td.textContent; saveRows();
-      paintMask(td, td.textContent); // 저장 후 다시 마스킹 표시
-    };
-    td.addEventListener('keydown', (e) => { if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') { e.preventDefault(); td.blur(); } });
-    td.addEventListener('blur', commit, { once: true });
-  };
-
+  // 행/열 추가·삭제
+  const addRow = () => { card.rows.push(new Array(cols()).fill('')); saveRows(); draw(); };
+  const addCol = () => { const c = cols(); card.rows.forEach((r) => { while (r.length < c) r.push(''); r.push(''); }); saveRows(); draw(); };
   const delRow = (ri) => { if (card.rows.length <= 1) return tip('행이 하나뿐입니다.'); card.rows.splice(ri, 1); saveRows(); draw(); };
   const delCol = (ci) => { if (cols() <= 1) return tip('열이 하나뿐입니다.'); card.rows.forEach((r) => { if (ci < r.length) r.splice(ci, 1); }); saveRows(); draw(); };
 
+  // 편집 모드 셀 이동(Tab=다음 칸, Enter=아래 칸; 끝에서 새 행 자동 추가)
+  const focusCell = (r, c) => { const el = wrap.querySelector('td[data-r="' + r + '"][data-c="' + c + '"]'); if (el) { el.focus(); caretEnd(el); } };
+  const navKey = (e, ri, ci) => {
+    const n = cols();
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      let r = ri, c = ci + (e.shiftKey ? -1 : 1);
+      if (c >= n) { c = 0; r++; if (r >= card.rows.length) addRow(); }
+      else if (c < 0) { c = n - 1; r = Math.max(0, ri - 1); }
+      focusCell(r, c);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      let r = ri + (e.shiftKey ? -1 : 1);
+      if (r >= card.rows.length) addRow();
+      if (r < 0) r = 0;
+      focusCell(r, ci);
+    } else if (e.key === 'Escape') { e.preventDefault(); e.target.blur(); }
+  };
+
+  // ── 보기 모드 셀 범위 선택(드래그=셀 단위, 텍스트 커서 위치와 무관). Ctrl+C로 TSV 복사 ──
+  let selecting = false, dragged = false, selAnchor = null, selFocus = null;
+  const selRange = () => (!selAnchor || !selFocus) ? null : {
+    r0: Math.min(selAnchor.r, selFocus.r), r1: Math.max(selAnchor.r, selFocus.r),
+    c0: Math.min(selAnchor.c, selFocus.c), c1: Math.max(selAnchor.c, selFocus.c),
+  };
+  const paintSel = () => {
+    const s = selRange();
+    wrap.querySelectorAll('td[data-r]').forEach((td) => {
+      const r = +td.dataset.r, c = +td.dataset.c;
+      td.classList.toggle('selected', !!s && r >= s.r0 && r <= s.r1 && c >= s.c0 && c <= s.c1);
+    });
+  };
+  const clearSel = () => { selAnchor = selFocus = null; selecting = false; dragged = false; paintSel(); };
+  const cellVal = (r, c) => (card.rows[r] && card.rows[r][c] != null ? String(card.rows[r][c]) : '');
+  const copySel = () => {
+    const s = selRange(); if (!s) return false;
+    // 범위 복사는 화면 그대로(마스킹 반영) — 대량 PII 유출 방지(Codex P1-1, 사용자 결정). 👁 공개(revealed) 중이면 원문.
+    const out = [];
+    for (let r = s.r0; r <= s.r1; r++) {
+      const row = [];
+      for (let c = s.c0; c <= s.c1; c++) { const raw = cellVal(r, c); row.push(revealed ? raw : display(raw)); }
+      out.push(row.join('\t'));
+    }
+    window.api.copyText(out.join('\n'));
+    return true;
+  };
+
   const draw = () => {
     wrap.innerHTML = '';
+    selAnchor = selFocus = null; selecting = false; dragged = false; // 재렌더 시 선택 초기화
     maskEls.length = 0; // 표 전체 재구성 — 셀 레지스트리 초기화(누수 방지)
     const n = cols();
     const table = document.createElement('table'); table.className = 'tbl';
 
-    // 맨 위: 열 삭제 핸들 행(모서리 빈칸 + 열마다 ✕). 표에 마우스를 올리면 나타남.
-    const headtr = document.createElement('tr'); headtr.className = 'ctrlrow';
-    headtr.appendChild(Object.assign(document.createElement('td'), { className: 'corner' }));
-    for (let ci = 0; ci < n; ci++) {
-      const ch = document.createElement('td'); ch.className = 'coldel';
-      const cc = ci;
-      const b = document.createElement('button'); b.className = 'delbtn'; b.textContent = '✕'; b.title = '이 열 삭제';
-      b.addEventListener('click', () => delCol(cc));
-      ch.appendChild(b); headtr.appendChild(ch);
+    if (editMode) { // 편집 모드에서만 열 삭제 핸들 행(모서리 빈칸 + 열마다 ✕)
+      const headtr = document.createElement('tr'); headtr.className = 'ctrlrow';
+      headtr.appendChild(Object.assign(document.createElement('td'), { className: 'corner' }));
+      for (let ci = 0; ci < n; ci++) {
+        const ch = document.createElement('td'); ch.className = 'coldel'; const cc = ci;
+        const b = document.createElement('button'); b.className = 'delbtn'; b.textContent = '✕'; b.title = '이 열 삭제';
+        b.addEventListener('click', () => delCol(cc));
+        ch.appendChild(b); headtr.appendChild(ch);
+      }
+      table.appendChild(headtr);
     }
-    table.appendChild(headtr);
 
     card.rows.forEach((row, ri) => {
       const tr = document.createElement('tr');
-      // 맨 왼쪽: 행 삭제 핸들(이 행에 마우스를 올리면 나타남).
-      const gut = document.createElement('td'); gut.className = 'rowdel';
-      const rr = ri;
-      const rb = document.createElement('button'); rb.className = 'delbtn'; rb.textContent = '✕'; rb.title = '이 행 삭제';
-      rb.addEventListener('click', () => delRow(rr));
-      gut.appendChild(rb); tr.appendChild(gut);
-
+      if (editMode) { // 행 삭제 핸들(왼쪽 ✕)
+        const gut = document.createElement('td'); gut.className = 'rowdel'; const rr = ri;
+        const rb = document.createElement('button'); rb.className = 'delbtn'; rb.textContent = '✕'; rb.title = '이 행 삭제';
+        rb.addEventListener('click', () => delRow(rr));
+        gut.appendChild(rb); tr.appendChild(gut);
+      }
       for (let ci = 0; ci < n; ci++) {
         const td = document.createElement('td');
-        td.setAttribute('contenteditable', 'false');
         const cr = ri, cc = ci;
-        registerMask(td, () => (card.rows[cr] && card.rows[cr][cc] != null ? card.rows[cr][cc] : '')); // 화면=마스킹, 원문은 card.rows 유지
-        let px = 0, py = 0;
-        td.addEventListener('pointerdown', (e) => { px = e.clientX; py = e.clientY; });
-        td.addEventListener('pointerup', (e) => {
-          if (td.getAttribute('contenteditable') === 'true') return;       // 편집 중 제외
-          if (Math.hypot(e.clientX - px, e.clientY - py) >= 4) return;     // 드래그면 범위 선택
-          if (!getSelection().isCollapsed) return;
-          const val = card.rows[cr] && card.rows[cr][cc] != null ? String(card.rows[cr][cc]) : '';
-          if (val.trim() === '') { editCell(td, cr, cc); return; }         // 빈 칸=클릭하면 바로 입력(편의)
-          td._copyTimer = setTimeout(() => {                               // 채워진 칸=원문 복사(더블클릭이면 취소됨)
-            window.api.copyText(val);
-            td.classList.add('copied'); setTimeout(() => td.classList.remove('copied'), 800);
-          }, 180);
-        });
-        td.addEventListener('dblclick', () => { clearTimeout(td._copyTimer); editCell(td, cr, cc); });
-        td.addEventListener('input', () => { while (card.rows[ri].length <= ci) card.rows[ri].push(''); card.rows[ri][ci] = td.textContent; saveRows(); }); // 입력 즉시 저장(편집 중 원문)
+        if (editMode) {
+          // 편집: 셀=수정 전용(원문 표시, 포커스된 칸만 강조). 복사/마스킹 없음.
+          td.setAttribute('contenteditable', 'true');
+          td.dataset.r = ri; td.dataset.c = ci;
+          td.textContent = card.rows[cr][cc] != null ? card.rows[cr][cc] : '';
+          td.addEventListener('input', () => { while (card.rows[ri].length <= ci) card.rows[ri].push(''); card.rows[ri][ci] = td.textContent; saveRows(); });
+          td.addEventListener('keydown', (e) => navKey(e, ri, ci));
+        } else {
+          // 보기: 셀=복사 전용. 클릭=한 칸 원문 복사 / 드래그=셀 범위 선택(엑셀 호환 TSV). 셀 단위로 쉽게 선택.
+          td.setAttribute('contenteditable', 'false');
+          td.dataset.r = ri; td.dataset.c = ci;
+          registerMask(td, () => (card.rows[cr] && card.rows[cr][cc] != null ? card.rows[cr][cc] : ''));
+          td.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0) return;
+            if (selAnchor) clearSel();                          // 이전 범위 해제
+            selecting = true; dragged = false;
+            selAnchor = { r: cr, c: cc }; selFocus = { r: cr, c: cc };
+          });
+          td.addEventListener('pointerenter', () => { if (selecting) { dragged = true; selFocus = { r: cr, c: cc }; paintSel(); } });
+        }
         tr.appendChild(td);
       }
       table.appendChild(tr);
@@ -380,7 +431,9 @@ function renderTable(body) {
 
   const hint = document.createElement('div');
   hint.className = 'hint';
-  const HINT = '빈 칸=클릭 입력 · 채워진 칸 클릭=복사 / 더블클릭=수정 · 행 왼쪽·열 위 ✕=삭제';
+  const VIEW_HINT = '보기: 셀 클릭=복사 · 드래그=범위 선택(엑셀) · 수정하려면 ✏ 편집';
+  const EDIT_HINT = '편집: 셀 클릭=수정 · Tab=다음 칸 · Enter=아래 칸 · 행 왼쪽·열 위 ✕=삭제';
+  let HINT = VIEW_HINT;
   hint.textContent = HINT;
   let undoRows = null;
   const tip = (msg, ms) => { hint.textContent = msg; setTimeout(() => { if (!undoRows) hint.textContent = HINT; }, ms || 3000); };
@@ -405,10 +458,15 @@ function renderTable(body) {
     });
     return rows.length ? rows.slice(0, 500).map((r) => r.slice(0, 50)) : null;
   };
+  let lastDiag = '';
   const getClipTable = async () => {
-    try { const r = parseHTMLTable(await window.api.readClipboardHTML()); if (r && r.length) return r; } catch (_) {}
-    const t = await window.api.readClipboard();
-    if (t && /[\t\n]/.test(t)) { const p = parseTSV(t); if (p.length) return p; }
+    const hasHtml = typeof window.api.readClipboardHTML === 'function';
+    let html = '', text = '';
+    if (hasHtml) { try { html = (await window.api.readClipboardHTML()) || ''; } catch (_) { html = ''; } }
+    try { text = (await window.api.readClipboard()) || ''; } catch (_) { text = ''; }
+    lastDiag = `API:${hasHtml ? 'ok' : '없음(재시작필요)'} · HTML ${html.length}자(table:${/<table/i.test(html) ? 'O' : 'X'}) · 텍스트 ${text.length}자(탭${/\t/.test(text) ? 'O' : 'X'}·줄${/\n/.test(text) ? 'O' : 'X'})`;
+    const r = parseHTMLTable(html); if (r && r.length) return r;
+    if (text && /[\t\n]/.test(text)) { const p = parseTSV(text); if (p.length) return p; }
     return null;
   };
 
@@ -425,13 +483,13 @@ function renderTable(body) {
     try { window.focus(); } catch (_) {}
     hint.textContent = '클립보드 읽는 중…'; // 즉시 피드백(버튼이 눌렸음을 보장 — 무반응/못읽음 구분)
     const rows = await getClipTable();
-    if (!rows) return tip('표를 못 읽었습니다 — 엑셀에서 “셀 범위”를 복사했는지 확인하세요. (한 칸만 채우려면 셀 더블클릭)', 4000);
+    if (!rows) return tip('표 못읽음 · ' + lastDiag, 9000); // 진단: 클립보드에 실제로 무엇이 들어왔는지 표시
     if (mode === 'append') {
       undoRows = card.rows.map((r) => r.slice());
       if (isEmpty()) card.rows = []; // 빈 기본표면 교체처럼
       rows.forEach((r) => card.rows.push(r.slice()));
       const c = cols(); card.rows.forEach((r) => { while (r.length < c) r.push(''); }); // 열 수 정렬
-      saveRows(); draw(); showResult('아래에 ' + dims(rows) + ' 추가했습니다 · ');
+      saveRows(); draw(); showResult('표를 아래에 ' + dims(rows) + ' 이어붙였습니다 · ');
     } else {
       if (!isEmpty() && !window.confirm('현재 표를 붙여넣은 내용으로 바꿉니다.\n(되돌리기로 한 번 복구 가능)\n\n계속할까요?')) return;
       undoRows = card.rows.map((r) => r.slice());
@@ -440,20 +498,61 @@ function renderTable(body) {
     }
   };
 
-  ctrl.appendChild(mkBtn('+행', () => { card.rows.push(new Array(cols()).fill('')); saveRows(); draw(); }, '맨 아래에 빈 행 추가 (개별 행 삭제는 행 왼쪽 ✕)'));
-  ctrl.appendChild(mkBtn('+열', () => { const c = cols(); card.rows.forEach((r) => { while (r.length < c) r.push(''); r.push(''); }); saveRows(); draw(); }, '오른쪽에 빈 열 추가 (개별 열 삭제는 열 위 ✕)'));
-  ctrl.appendChild(mkBtn('표 붙여넣기', () => doPaste('replace'), '클립보드의 표로 이 표를 교체 · Ctrl+V로도 가능'));
-  ctrl.appendChild(mkBtn('아래 추가', () => doPaste('append'), '클립보드의 표를 맨 아래에 이어붙이기'));
+  // 컨트롤 바: 모드 토글 + (편집일 때만 +행/+열) + 붙여넣기. 모드에 따라 다시 그림.
+  const editBtn = document.createElement('button'); editBtn.className = 'modetoggle';
+  const renderCtrl = () => {
+    ctrl.innerHTML = '';
+    editBtn.textContent = editMode ? '✓ 편집 중 — 끝내기' : '✏ 편집';
+    editBtn.title = editMode ? '편집을 끝내고 보기 모드로' : '셀을 수정하려면 켜세요';
+    editBtn.classList.toggle('active', editMode);
+    ctrl.appendChild(editBtn);
+    if (editMode) { // 붙여넣기/추가/삭제는 전부 편집 동작 → 편집 모드에서만. 보기 모드는 복사 전용.
+      ctrl.appendChild(mkBtn('+행', addRow, '맨 아래 빈 행'));
+      ctrl.appendChild(mkBtn('+열', addCol, '오른쪽 빈 열'));
+      ctrl.appendChild(mkBtn('표 붙여넣기', () => doPaste('replace'), '클립보드의 표로 전체 교체 · Ctrl+V'));
+      ctrl.appendChild(mkBtn('표 아래 추가', () => doPaste('append'), '클립보드의 표를 맨 아래에 이어붙이기'));
+    }
+  };
+  const setMode = (on) => {
+    editMode = on; HINT = on ? EDIT_HINT : VIEW_HINT;
+    document.body.classList.toggle('tedit', on);
+    renderCtrl(); draw();
+    hint.textContent = HINT;
+  };
+  editBtn.addEventListener('click', () => setMode(!editMode));
 
   body.appendChild(ctrl);
   body.appendChild(wrap);
   body.appendChild(hint);
-  draw();
+  // 새 표(헤더만 있거나 빈 표)는 편집 모드로 시작, 데이터가 있으면 보기 모드로 시작.
+  const fresh = card.rows.slice(1).every((r) => r.every((c) => c == null || String(c).trim() === ''));
+  setMode(fresh);
 
-  // Ctrl+V: 셀 편집 중이면 셀 안에 붙여넣기(기본). 아니면 표 전체 교체.
-  // paste 이벤트는 편집요소 포커스가 없으면 안 떠서 keydown으로 처리(창 포커스만 있으면 동작).
+  // 드래그 종료: 단일 셀이면 그 칸 복사, 범위면 선택 유지(Ctrl+C로 TSV 복사).
+  document.addEventListener('pointerup', () => {
+    if (!selecting) return;
+    selecting = false;
+    const s = selRange();
+    if (!dragged && selAnchor) { // 단일 클릭 = 그 칸 원문 복사
+      const td = wrap.querySelector('td[data-r="' + selAnchor.r + '"][data-c="' + selAnchor.c + '"]');
+      window.api.copyText(cellVal(selAnchor.r, selAnchor.c));
+      if (td) { td.classList.add('copied'); setTimeout(() => td.classList.remove('copied'), 800); }
+      clearSel();
+    } else if (s && (s.r0 !== s.r1 || s.c0 !== s.c1)) { // 범위 선택 완료
+      tip('범위 선택됨 · Ctrl+C로 복사', 3000);
+    }
+  });
+  // 보기 모드: Ctrl+C=선택 범위 TSV 복사, Esc=선택 해제.
+  document.addEventListener('keydown', (e) => {
+    if (editMode) return;
+    if ((e.ctrlKey || e.metaKey) && (e.key || '').toLowerCase() === 'c') { if (copySel()) { e.preventDefault(); tip('범위 복사됨', 1500); } }
+    else if (e.key === 'Escape') clearSel();
+  });
+
+  // Ctrl+V: 편집 칸 포커스면 기본(셀 안 붙여넣기), 아니면 표 전체 교체. (paste 이벤트가 안 떠서 keydown으로 처리)
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'v') return;
+    if (!editMode) return; // 붙여넣기는 편집 모드에서만(보기 = 복사 전용)
     const ae = document.activeElement;
     if (ae && ae.getAttribute && ae.getAttribute('contenteditable') === 'true') return;
     e.preventDefault();
@@ -471,7 +570,7 @@ function setupBar() {
   rename.addEventListener('click', startRename);
   title.addEventListener('blur', () => {
     title.classList.remove('editing'); title.contentEditable = 'false';
-    card.title = title.textContent.trim() || ({ snippet: '상용구', callmemo: '콜 메모', memo: '메모' }[card.type] || '메모');
+    card.title = title.textContent.trim() || ({ snippet: '상용구', callmemo: '기록 메모', memo: '메모', table: '표', todo: '할일' }[card.type] || '메모');
     title.textContent = card.title;
     saveCard({ title: card.title });
   });
@@ -487,14 +586,16 @@ function setupBar() {
 
   const fold = document.getElementById('fold');
   if (card.collapsed) document.documentElement.classList.add('collapsed');
-  const toggleFold = () => {
-    card.collapsed = !card.collapsed;
+  const setCollapsed = (val) => {
+    if (!!card.collapsed === !!val) return;
+    card.collapsed = !!val;
     document.documentElement.classList.toggle('collapsed', card.collapsed);
     window.api.collapse(ID, card.collapsed);
   };
-  fold.onclick = toggleFold;
+  setCardCollapsed = setCollapsed; // 패널 더블클릭 신호에서 펼치기 호출(item 1)
+  fold.onclick = () => setCollapsed(!card.collapsed);
   // 헤더 더블클릭으로도 접기/펼치기 (이름 편집 중 단어 선택과 겹치지 않게 제외)
-  title.addEventListener('dblclick', () => { if (!title.classList.contains('editing')) toggleFold(); });
+  title.addEventListener('dblclick', () => { if (!title.classList.contains('editing')) setCollapsed(!card.collapsed); });
 
   // 헤더 수동 드래그: pointer capture로 창 밖 pointerup·리스너 누수 방지(H-1/H-3). 4px 임계값으로 클릭/더블클릭과 분리(H-6).
   // 기준 크기·위치는 메인이 dragStart에서 캡처(렌더러 비동기 레이스 없음 H-4). 델타만 전송.
@@ -559,8 +660,20 @@ async function init() {
     }
     window.api.updateCard(ID, { timeDisplay: card.timeDisplay, format: card.format });
   }
+  // 토큰 명칭 변경: 저장된 서식의 {상담사ID} → {사용자ID}로 정리. format.template + 콜메모 커스텀 timeTemplate 둘 다(Codex P2-3). 치환은 양쪽 다 지원.
+  {
+    const patch = {};
+    if (card.format && typeof card.format.template === 'string' && card.format.template.includes('{상담사ID}')) {
+      card.format.template = card.format.template.split('{상담사ID}').join('{사용자ID}'); patch.format = card.format;
+    }
+    if (typeof card.timeTemplate === 'string' && card.timeTemplate.includes('{상담사ID}')) {
+      card.timeTemplate = card.timeTemplate.split('{상담사ID}').join('{사용자ID}'); patch.timeTemplate = card.timeTemplate;
+    }
+    if (Object.keys(patch).length) window.api.updateCard(ID, patch);
+  }
   document.addEventListener('paste', forcePlainPaste, true); // 붙여넣기 평문 통일(링크 앵커 텍스트가 아닌 URL 원본)
-  if (window.api.onFlash) window.api.onFlash(() => { // 패널 더블클릭 신호: 흔들기+테두리 플래시
+  if (window.api.onFlash) window.api.onFlash(() => { // 패널 더블클릭 신호: 접혀있으면 펼치기 + 흔들기/테두리 플래시
+    if (setCardCollapsed) setCardCollapsed(false); // item 1: 접힌 카드도 펼쳐서 바로 보이게
     const el = document.documentElement;
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); // 리플로우로 애니메이션 재시작
     setTimeout(() => el.classList.remove('flash'), 700);

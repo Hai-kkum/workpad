@@ -4,7 +4,7 @@
 const $ = (s) => document.querySelector(s);
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const escapeHtml = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-const typeLabel = (t) => ({ snippet: '상용구', callmemo: '콜', memo: '메모', table: '표' }[t] || t);
+const typeLabel = (t) => ({ snippet: '상용구', callmemo: '기록', memo: '메모', table: '표', todo: '할일' }[t] || t);
 
 let sections = ['공통', '요금제', '부가서비스', '기타'];
 let activeTab = '전체';        // '전체' 또는 섹션명
@@ -212,10 +212,14 @@ function wire() {
   $('#maskPII').addEventListener('change', (e) => window.api.updateSettings({ maskPII: e.target.checked }));
 
   const search = $('#search');
+  const searchClear = $('#searchClear');
+  const updateClear = () => { searchClear.hidden = !search.value; };
+  search.addEventListener('input', updateClear); // 입력 즉시 ✕ 표시/숨김
   search.addEventListener('input', debounce(() => { const q = search.value.trim(); if (q) doSearch(q); else renderCardList(); }, 200));
+  searchClear.addEventListener('click', () => { search.value = ''; updateClear(); renderCardList(); search.focus(); });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); search.focus(); search.select(); }
-    if (e.key === 'Escape' && document.activeElement === search) { search.value = ''; renderCardList(); search.blur(); }
+    if (e.key === 'Escape' && document.activeElement === search) { search.value = ''; updateClear(); renderCardList(); search.blur(); }
   });
 
   // 커스텀 헤더(프레임리스) — 핀/접기/최소화/닫기 + 헤더 더블클릭 접기
