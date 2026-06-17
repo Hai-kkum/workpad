@@ -87,6 +87,11 @@ body {
 .hint .tundo { -webkit-app-region: no-drag; margin-left: 2px; border: 1px solid #d7dbe0; background: #fff; border-radius: 4px; color: #2563eb; font-size: 11px; padding: 1px 7px; cursor: pointer; }
 .hint .tundo:hover { background: #eef4ff; }
 
+/* 우클릭 줄 메뉴 */
+.ctxmenu { position: fixed; z-index: 10000; background: #fff; border: 1px solid #d7dbe0; border-radius: 6px; box-shadow: 0 4px 14px rgba(0, 0, 0, .16); padding: 4px; min-width: 92px; }
+.ctxmenu button { -webkit-app-region: no-drag; display: block; width: 100%; text-align: left; border: 0; background: transparent; color: #c0392b; font-size: 12px; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
+.ctxmenu button:hover { background: #fdecea; }
+
 /* 맥락 워터마크: 👁로 PII를 공개하는 순간에만 표시(SE-7). 재마스킹 시 사라짐. 클릭 통과(pointer-events:none). */
 #watermark {
   position: fixed; inset: 0; z-index: 9999; pointer-events: none; overflow: hidden;

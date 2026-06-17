@@ -157,6 +157,13 @@ function makeRow(line) {
     clearTimeout(row._copyTimer);
     enterEdit(text, line, row);
   });
+  row.addEventListener('contextmenu', (e) => {
+    if (e.target.closest('.copy')) return;
+    if (text.getAttribute('contenteditable') === 'true') return; // 편집 중엔 OS 기본 메뉴(붙여넣기 등)
+    e.preventDefault();
+    clearTimeout(row._copyTimer);
+    showRowMenu(e.clientX, e.clientY, line, row);
+  });
 
   return row;
 }
@@ -177,6 +184,49 @@ function enterEdit(text, line, row) {
     if (e.key === 'Escape') { e.preventDefault(); text.blur(); }
   });
   text.addEventListener('blur', commit, { once: true });
+}
+
+function closeRowMenu() {
+  const m = document.getElementById('rowmenu');
+  if (m) m.remove();
+}
+
+// 줄 우클릭 메뉴(줄 삭제). 줄이 쌓이는 콜메모·할일 등에서 더블클릭→전체삭제 없이 한 번에 지우기.
+function showRowMenu(x, y, line, row) {
+  closeRowMenu();
+  const menu = document.createElement('div');
+  menu.className = 'ctxmenu'; menu.id = 'rowmenu';
+  const del = document.createElement('button');
+  del.type = 'button'; del.textContent = '줄 삭제';
+  del.addEventListener('click', () => {
+    const i = card.lines.indexOf(line);
+    if (i >= 0) card.lines.splice(i, 1);
+    row.remove();
+    persistLines();
+    closeRowMenu();
+  });
+  menu.appendChild(del);
+  document.body.appendChild(menu);
+
+  // 화면 밖으로 넘치지 않게 위치 보정
+  const r = menu.getBoundingClientRect();
+  menu.style.left = Math.max(2, Math.min(x, window.innerWidth - r.width - 4)) + 'px';
+  menu.style.top = Math.max(2, Math.min(y, window.innerHeight - r.height - 4)) + 'px';
+
+  // 바깥 클릭 · Esc · 창 포커스 해제 시 닫기(메뉴 연 클릭이 곧장 닫지 않게 다음 틱에 등록)
+  setTimeout(() => {
+    const cleanup = () => {
+      document.removeEventListener('pointerdown', onDoc, true);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('blur', onBlur);
+    };
+    const onDoc = (ev) => { if (!ev.target.closest('#rowmenu')) { closeRowMenu(); cleanup(); } };
+    const onKey = (ev) => { if (ev.key === 'Escape') { closeRowMenu(); cleanup(); } };
+    const onBlur = () => { closeRowMenu(); cleanup(); };
+    document.addEventListener('pointerdown', onDoc, true);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('blur', onBlur);
+  }, 0);
 }
 
 function renderList(body) {
