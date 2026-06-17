@@ -268,8 +268,20 @@ function registerIpc() {
     const height = w._collapsed && prev && prev.bounds ? prev.bounds.height : b.height;
     store.updateBounds(id, { x: b.x, y: b.y, width: b.width, height });
   });
+  // 패널 헤더 수동 드래그(카드와 동일 패턴). 프레임리스에서 -webkit-app-region:drag를 쓰면 헤더 더블클릭(접기)이
+  // 안 잡혀 수동 처리. dragStart에서 현재 위치/크기 1회 캡처 → dragMove는 델타만 적용(크기 고정, 비동기 레이스 없음).
+  ipcMain.on('panel:dragStart', () => { if (panelWin && !panelWin.isDestroyed()) panelWin._dragBase = panelWin.getBounds(); });
+  ipcMain.on('panel:dragMove', (_e, dx, dy) => {
+    if (!panelWin || panelWin.isDestroyed() || !panelWin._dragBase) return;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    const b = panelWin._dragBase;
+    panelWin.setBounds({ x: Math.round(b.x + dx), y: Math.round(b.y + dy), width: b.width, height: b.height });
+  });
+  ipcMain.on('panel:dragEnd', () => { if (panelWin && !panelWin.isDestroyed()) panelWin._dragBase = null; });
   ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text ?? '')); return true; });
   ipcMain.handle('clipboard:read', () => clipboard.readText());
+  ipcMain.handle('clipboard:readHTML', () => clipboard.readHTML()); // 엑셀/CRM 표는 HTML(table)로도 올라옴 — 차원 정확
+
   ipcMain.handle('settings:get', () => store.getSettings());
   ipcMain.handle('settings:update', (_e, patch) => {
     const s = store.updateSettings(patch);
@@ -356,7 +368,8 @@ function registerIpc() {
   ipcMain.handle('panel:createCard', (_e, type, section) => {
     const card = defaultCard(['memo', 'callmemo', 'table'].includes(type) ? type : 'snippet', section);
     store.addCard(card);
-    createCardWindow(card, true);
+    const win = createCardWindow(card, true);
+    win.once('show', () => { try { win.focus(); } catch (_) {} }); // 새로 만든 카드는 바로 포커스 → 생성 직후 붙여넣기/입력 즉시 가능
     return card.id;
   });
   ipcMain.handle('panel:focusCard', (_e, id) => {

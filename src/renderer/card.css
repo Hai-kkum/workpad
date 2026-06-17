@@ -82,6 +82,8 @@ body {
 .row.revealed .text.masked, .tbl td.masked.revealed { background: #fff7ed; color: #1f2328; }
 
 .hint { padding: 6px 8px; font-size: 11px; color: #9aa1ab; }
+.hint .tundo { -webkit-app-region: no-drag; margin-left: 2px; border: 1px solid #d7dbe0; background: #fff; border-radius: 4px; color: #2563eb; font-size: 11px; padding: 1px 7px; cursor: pointer; }
+.hint .tundo:hover { background: #eef4ff; }
 
 /* 맥락 워터마크: 👁로 PII를 공개하는 순간에만 표시(SE-7). 재마스킹 시 사라짐. 클릭 통과(pointer-events:none). */
 #watermark {
@@ -94,11 +96,20 @@ body {
 /* 표 카드 */
 .twrap { overflow: auto; }
 .tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
-.tbl td { border: 1px solid #e3e5e8; padding: 3px 6px; min-width: 40px; cursor: default; white-space: pre-wrap; word-break: break-word; vertical-align: top; }
+.tbl td { border: 1px solid #e3e5e8; padding: 5px 7px; min-width: 40px; cursor: default; white-space: pre-wrap; word-break: break-word; vertical-align: top; }
+.tbl td:not([contenteditable="true"]):empty::after { content: "\200b"; } /* 빈 셀도 한 줄 높이 확보(추가된 행이 납작해지지 않게) */
 .tbl td:hover { background: #f7f9fc; }
 .tbl td.copied { background: #eafaf0; }
 .tbl td[contenteditable="true"] { background: #fffbe6; }
-.tctrl { display: flex; gap: 6px; padding: 5px 8px; border-bottom: 1px solid #f1f2f4; }
+/* 행/열 삭제 핸들(거터=행, 헤더=열). 평소 숨김 → 표/행에 마우스 올리면 ✕ 노출 */
+.tbl td.corner, .tbl td.rowdel, .tbl td.coldel { border: 0; background: #fafbfc; padding: 0; width: 18px; min-width: 18px; text-align: center; vertical-align: middle; cursor: default; }
+.tbl tr.ctrlrow td { height: 14px; }
+.tbl .delbtn { -webkit-app-region: no-drag; visibility: hidden; border: 0; background: transparent; color: #c0392b; cursor: pointer; font-size: 10px; line-height: 1; padding: 1px 2px; border-radius: 3px; }
+.tbl .delbtn:hover { background: #fdecea; }
+.twrap:hover .tbl tr.ctrlrow .delbtn { visibility: visible; }   /* 표에 올리면 열 삭제 핸들 */
+.tbl tr:hover > td.rowdel .delbtn { visibility: visible; }      /* 그 행에 올리면 행 삭제 핸들 */
+
+.tctrl { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 5px 8px; border-bottom: 1px solid #f1f2f4; }
 .tctrl button { -webkit-app-region: no-drag; border: 1px solid #d7dbe0; background: #fff; border-radius: 5px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
 .tctrl button:hover { background: #f3f4f6; }
 

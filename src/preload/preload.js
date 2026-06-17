@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   // 클립보드
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   readClipboard: () => ipcRenderer.invoke('clipboard:read'),
+  readClipboardHTML: () => ipcRenderer.invoke('clipboard:readHTML'),
   // 설정 / 상태
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
@@ -28,6 +29,9 @@ contextBridge.exposeInMainWorld('api', {
   // 패널 헤더 제어(프레임리스)
   panelPin: () => ipcRenderer.invoke('panel:pin'),
   panelCollapse: (collapsed) => ipcRenderer.invoke('panel:collapse', collapsed),
+  panelDragStart: () => ipcRenderer.send('panel:dragStart'),
+  panelDragMove: (dx, dy) => ipcRenderer.send('panel:dragMove', dx, dy),
+  panelDragEnd: () => ipcRenderer.send('panel:dragEnd'),
   panelMinimize: () => ipcRenderer.invoke('panel:minimize'),
   panelClose: () => ipcRenderer.invoke('panel:close'),
   panelState: () => ipcRenderer.invoke('panel:getState'),

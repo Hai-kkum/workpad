@@ -221,9 +221,45 @@ function wire() {
   // 커스텀 헤더(프레임리스) — 핀/접기/최소화/닫기 + 헤더 더블클릭 접기
   $('#pPin').onclick = async () => { const aot = await window.api.panelPin(); $('#pPin').classList.toggle('active', aot); };
   $('#pFold').onclick = toggleFold;
-  $('#phead').addEventListener('dblclick', (e) => { if (e.target.closest('.pbtn')) return; toggleFold(); });
+  const phead = $('#phead');
+  phead.addEventListener('dblclick', (e) => { if (e.target.closest('.pbtn')) return; toggleFold(); });
   $('#pMin').onclick = () => window.api.panelMinimize();
   $('#pClose').onclick = () => window.api.panelClose();
+
+  // 헤더 수동 드래그(카드와 동일): pointer capture + 4px 임계값으로 더블클릭(접기)과 분리.
+  let pdrag = null;
+  const onHeadMove = (e) => {
+    if (!pdrag) return;
+    const dx = e.screenX - pdrag.sx, dy = e.screenY - pdrag.sy;
+    if (!pdrag.moved && Math.hypot(dx, dy) < 4) return;
+    pdrag.moved = true; pdrag.dx = dx; pdrag.dy = dy;
+    if (!pdrag.raf) pdrag.raf = requestAnimationFrame(() => { pdrag.raf = 0; if (pdrag && pdrag.moved) window.api.panelDragMove(pdrag.dx, pdrag.dy); });
+  };
+  const endHeadDrag = () => {
+    if (!pdrag) return;
+    if (pdrag.raf) cancelAnimationFrame(pdrag.raf);
+    if (pdrag.moved) window.api.panelDragMove(pdrag.dx, pdrag.dy); // 마지막 위치 확정
+    window.api.panelDragEnd();
+    phead.removeEventListener('pointermove', onHeadMove);
+    phead.removeEventListener('pointerup', endHeadDrag);
+    phead.removeEventListener('pointercancel', endHeadDrag);
+    pdrag = null;
+  };
+  phead.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || e.target.closest('.pbtn')) return; // 좌클릭만, 버튼 제외
+    pdrag = { sx: e.screenX, sy: e.screenY, dx: 0, dy: 0, moved: false, raf: 0 };
+    try { phead.setPointerCapture(e.pointerId); } catch (_) {}
+    window.api.panelDragStart();
+    phead.addEventListener('pointermove', onHeadMove);
+    phead.addEventListener('pointerup', endHeadDrag);
+    phead.addEventListener('pointercancel', endHeadDrag);
+  });
+
+  // 설정·백업 접기(기본 닫힘)
+  const moreT = $('#moreToggle'), moreB = $('#moreBody');
+  const toggleMore = () => { const open = moreB.hidden; moreB.hidden = !open; moreT.classList.toggle('open', open); };
+  moreT.addEventListener('click', toggleMore);
+  moreT.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleMore(); } });
 
   $('#exportBtn').onclick = exportForm;
   $('#importBtn').onclick = importForm;

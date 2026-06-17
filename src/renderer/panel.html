@@ -8,7 +8,7 @@
 </head>
 <body>
   <div class="head" id="phead">
-    <span class="logo">Workpad</span><span class="ver">v0.2</span>
+    <span class="logo">Workpad</span><span class="ver">v0.2.1</span>
     <span class="hspace"></span>
     <button class="pbtn" id="pPin" title="항상 위">📌</button>
     <button class="pbtn" id="pFold" title="접기/펼치기 (헤더 더블클릭)">—</button>
@@ -19,24 +19,23 @@
   <div class="content" id="content">
     <div class="sec" style="border-top:none;"><div class="row"><input id="search" placeholder="전체 검색 (Ctrl+K)" /></div></div>
 
+    <!-- 카드: 추가 + 섹션 필터 + 목록 + 전체 표시/숨김을 한 블록으로 통합 -->
     <div class="sec">
-      <div class="lbl">카드 추가</div>
-      <div class="btns">
+      <div class="sechead">
+        <span class="lbl">카드</span>
+        <span class="mini">
+          <button id="showAll">표시</button>
+          <button id="hideAll">숨김</button>
+          <button id="toggleAll">토글</button>
+        </span>
+      </div>
+      <div class="btns add">
         <button data-type="snippet">+ 상용구</button>
         <button data-type="callmemo">+ 콜 메모</button>
         <button data-type="memo">+ 메모</button>
         <button data-type="table">+ 표</button>
       </div>
-    </div>
-
-    <div class="sec">
-      <div class="lbl">전체 카드</div>
       <div class="tabs" id="tabs"></div>
-      <div class="btns">
-        <button id="showAll">표시</button>
-        <button id="hideAll">숨김</button>
-        <button id="toggleAll">토글</button>
-      </div>
       <div class="cards" id="cards"></div>
     </div>
 
@@ -49,21 +48,26 @@
       <div class="presets" id="presets"></div>
     </div>
 
-    <div class="sec">
-      <div class="lbl">설정</div>
-      <div class="row"><label class="fld">상담사ID</label><input id="agentId" placeholder="예: 김상담" /></div>
-      <div class="row"><label class="chk"><input type="checkbox" id="maskPII" /> 화면에서 개인정보 가리기(주민·카드번호) — 복사는 원문</label></div>
-      <div class="hint" id="hotkeyHint"></div>
+    <!-- 설정 · 백업: 자주 안 쓰는 항목은 접어둠(기본 닫힘) -->
+    <div class="sec disc" id="moreToggle" role="button" tabindex="0">
+      <span class="lbl">설정 · 백업</span><span class="arr">▾</span>
     </div>
-
-    <div class="sec" id="xferSec">
-      <div class="lbl">데이터 백업 · PC 이전</div>
-      <div class="btns" id="xferBtns">
-        <button id="exportBtn">내보내기</button>
-        <button id="importBtn">가져오기</button>
+    <div id="moreBody" hidden>
+      <div class="sub">
+        <div class="row"><label class="fld">상담사ID</label><input id="agentId" placeholder="예: 김상담" /></div>
+        <div class="row"><label class="chk"><input type="checkbox" id="maskPII" /> 개인정보 가리기 (복사는 원문)</label></div>
+        <div class="hint" id="hotkeyHint"></div>
       </div>
-      <div id="xferForm"></div>
-      <div class="hint" id="xferHint">암호로 잠근 백업 파일로 내보내고, 새 PC에서 같은 암호로 가져옵니다.</div>
+
+      <div class="sub" id="xferSec">
+        <div class="lbl2">데이터 백업 · PC 이전</div>
+        <div class="btns" id="xferBtns">
+          <button id="exportBtn">내보내기</button>
+          <button id="importBtn">가져오기</button>
+        </div>
+        <div id="xferForm"></div>
+        <div class="hint" id="xferHint">암호로 백업해 새 PC에서 복원합니다.</div>
+      </div>
     </div>
 
     <div class="status" id="status"></div>

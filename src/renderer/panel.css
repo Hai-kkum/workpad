@@ -3,21 +3,24 @@ body {
   font: 13px/1.5 system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
   color: #1f2328; background: #fff; overflow: hidden;
 }
-/* 프레임리스 커스텀 헤더 = 창 이동(drag) 영역. 버튼은 no-drag. (item 5) */
+/* 프레임리스 커스텀 헤더 = 창 이동 영역. 수동 드래그(pointer)로 처리해야 더블클릭 접기가 잡힘(-webkit-app-region:drag는 dblclick을 삼킴). */
 .head {
   display: flex; align-items: center; gap: 6px; height: 34px; box-sizing: border-box;
   padding: 0 4px 0 12px; background: #f3f4f6; border-bottom: 1px solid #e3e5e8;
-  -webkit-app-region: drag; user-select: none;
+  cursor: move; user-select: none;
 }
 .logo { font-size: 14px; font-weight: 600; }
 .ver { font-size: 11px; color: #9aa1ab; }
 .hspace { flex: 1; }
 .pbtn {
-  -webkit-app-region: no-drag; border: 0; background: transparent; color: #6b7280;
+  border: 0; background: transparent; color: #6b7280;
   font-size: 12px; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; line-height: 1; padding: 0;
 }
 .pbtn:hover { background: #e5e7eb; color: #111; }
-.pbtn.active { color: #2563eb; background: #dbeafe; }
+.pbtn.active { background: #fdecea; }
+/* 항상 위 핀(📌은 이모지라 color 무시) — 끄면 회색(grayscale), 켜면 원래 빨강 */
+#pPin { filter: grayscale(1); opacity: .5; }
+#pPin.active { filter: none; opacity: 1; }
 .content { padding: 0 12px 12px; height: calc(100vh - 34px); box-sizing: border-box; overflow-y: auto; }
 body.collapsed .content { display: none; }
 
@@ -34,6 +37,23 @@ body.collapsed .content { display: none; }
 
 .sec { padding: 8px 0; border-top: 1px solid #f0f1f3; }
 .lbl { font-size: 11px; font-weight: 500; color: #6b7280; margin-bottom: 6px; }
+
+/* 카드 섹션 머리(라벨 + 우측 미니 표시/숨김/토글) */
+.sechead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.sechead .lbl { margin-bottom: 0; }
+.mini { display: flex; gap: 4px; }
+.mini button { font-size: 11px; padding: 2px 8px; color: #6b7280; border-color: #e7e9ec; }
+.btns.add { margin-bottom: 8px; }
+
+/* 설정 · 백업 접기(기본 닫힘) */
+.disc { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
+.disc:hover .lbl { color: #374151; }
+.disc .arr { color: #9aa1ab; font-size: 11px; transition: transform .15s; }
+.disc.open .arr { transform: rotate(180deg); }
+.sub { padding: 2px 0 6px; }
+.sub + .sub { border-top: 1px solid #f0f1f3; padding-top: 8px; margin-top: 4px; }
+.lbl2 { font-size: 11px; font-weight: 500; color: #6b7280; margin-bottom: 6px; }
+
 .btns { display: flex; gap: 6px; flex-wrap: wrap; }
 button {
   border: 1px solid #d7dbe0; background: #fff; color: #1f2328; border-radius: 6px;
