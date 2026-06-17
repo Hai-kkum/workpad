@@ -68,6 +68,8 @@ body {
 .row .copy:hover { color: #2563eb; }
 .row.copied { background: #eafaf0; }
 .row.copied .copy { visibility: visible; color: #16a34a; }
+.todochk { flex: 0 0 auto; margin: 3px 2px 0 0; cursor: pointer; } /* 할일 체크박스 */
+.row.done .text { text-decoration: line-through; color: #9aa1ab; }
 
 .ghost .text:empty:before { content: attr(data-ph); color: #b6bcc5; }
 .ghost .gpaste {
@@ -100,7 +102,10 @@ body {
 .tbl td:not([contenteditable="true"]):empty::after { content: "\200b"; } /* 빈 셀도 한 줄 높이 확보(추가된 행이 납작해지지 않게) */
 .tbl td:hover { background: #f7f9fc; }
 .tbl td.copied { background: #eafaf0; }
-.tbl td[contenteditable="true"] { background: #fffbe6; }
+.tbl td.selected { background: #dbeafe; } /* 보기 모드 셀 범위 선택 */
+body:not(.tedit) .tbl td { user-select: none; cursor: cell; } /* 보기=셀 단위 선택(텍스트 커서 위치 무관) */
+.tbl td:focus { background: #fffbe6; outline: none; } /* 편집 시 포커스된 칸만 강조(전체가 노래지지 않게) */
+body.tedit .tbl td { cursor: text; }                  /* 편집 모드 = 칸이 수정 가능함을 커서로 표시 */
 /* 행/열 삭제 핸들(거터=행, 헤더=열). 평소 숨김 → 표/행에 마우스 올리면 ✕ 노출 */
 .tbl td.corner, .tbl td.rowdel, .tbl td.coldel { border: 0; background: #fafbfc; padding: 0; width: 18px; min-width: 18px; text-align: center; vertical-align: middle; cursor: default; }
 .tbl tr.ctrlrow td { height: 14px; }
@@ -112,6 +117,9 @@ body {
 .tctrl { display: flex; flex-wrap: wrap; gap: 4px 6px; padding: 5px 8px; border-bottom: 1px solid #f1f2f4; }
 .tctrl button { -webkit-app-region: no-drag; border: 1px solid #d7dbe0; background: #fff; border-radius: 5px; font-size: 11px; padding: 2px 8px; cursor: pointer; }
 .tctrl button:hover { background: #f3f4f6; }
+.tctrl .modetoggle { font-weight: 600; }
+.tctrl .modetoggle.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.tctrl .modetoggle.active:hover { background: #1d4ed8; }
 
 /* 복사 서식 편집 */
 .fmtbox {
@@ -124,7 +132,11 @@ body {
   width: 100%; box-sizing: border-box; border: 1px solid #d7dbe0; border-radius: 4px;
   padding: 3px 6px; font: 12px ui-monospace, Consolas, monospace;
 }
-.fmtbox .tokens { color: #9aa1ab; }
+.fmtbox .tpl[readonly] { background: #f3f4f6; color: #6b7280; cursor: default; } /* 콜메모 미리보기(직접 수정 불가) */
+.fmtbox .tokens { color: #9aa1ab; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.fmtbox .tklbl { font-size: 11px; margin-right: 2px; }
+.fmtbox .tok { -webkit-app-region: no-drag; border: 1px solid #d7dbe0; background: #fff; border-radius: 10px; font-size: 11px; padding: 1px 7px; cursor: pointer; color: #374151; font-family: ui-monospace, Consolas, monospace; }
+.fmtbox .tok:hover { background: #eef4ff; border-color: #93c5fd; color: #1d4ed8; }
 .fmtbox .tb { display: flex; align-items: center; gap: 6px; }
 .fmtbox select { font-size: 11px; padding: 2px 4px; border: 1px solid #d7dbe0; border-radius: 4px; }
 .allcopy { -webkit-app-region: no-drag; margin: 6px 8px 0; padding: 5px 10px; border: 1px solid #d7dbe0; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; }
