@@ -10,6 +10,7 @@ Workpad uses a floating office-card mark: stacked local cards plus a `W` stroke.
 - `workpad-app-icon.svg`: square app icon source
 - `workpad-app-icon-256.png`: app icon PNG
 - `workpad-app-icon-512.png`: app icon PNG
+- `workpad-app-icon.ico`: Windows executable icon
 - `workpad-mark-512.png`: standalone mark PNG
 - `workpad-logo-960.png`: horizontal logo PNG
 

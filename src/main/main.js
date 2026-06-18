@@ -16,6 +16,7 @@ const PANEL_HEAD_H = 34; // 패널 접힘 높이(커스텀 헤더만)
 const PRELOAD = path.join(__dirname, '..', 'preload', 'preload.js');
 const CARD_HTML = path.join(__dirname, '..', 'renderer', 'card.html');
 const PANEL_HTML = path.join(__dirname, '..', 'renderer', 'panel.html');
+const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'brand', 'workpad-app-icon-256.png');
 const isDev = process.argv.includes('--dev');
 
 // GUI 앱은 stderr가 콘솔에 안 붙으므로 진단은 파일 로그로 남긴다.
@@ -157,6 +158,7 @@ function createCardWindow(card, show) {
     alwaysOnTop: !!card.alwaysOnTop, show: false,
     maximizable: false, fullscreenable: false,
     backgroundColor: '#ffffff',
+    icon: APP_ICON,
     webPreferences: { preload: PRELOAD, contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   win._collapsed = collapsed;
@@ -224,6 +226,7 @@ function createPanel() {
     title: 'Workpad', show: false, frame: false, alwaysOnTop: aot, // 프레임리스 + 커스텀 헤더(item 5)
     maximizable: false, fullscreenable: false,
     backgroundColor: '#ffffff',
+    icon: APP_ICON,
     webPreferences: { preload: PRELOAD, contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   wireWindow(panelWin, true, 'panel');

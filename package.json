@@ -2,7 +2,7 @@
   "name": "workpad",
   "productName": "Workpad",
   "version": "0.2.1",
-  "description": "상담사용 로컬 플로팅 카드 메모 도구 — 메모장을 대체하는 오프라인 워크벤치 (offline floating-card workpad for contact-center agents)",
+  "description": "오피스용 로컬 플로팅 카드 메모 도구 — 메모장을 대체하는 오프라인 워크벤치 (offline floating-card workpad for office teams)",
   "license": "MIT",
   "author": "Hai-kkum",
   "private": true,
@@ -21,10 +21,12 @@
     },
     "files": [
       "src/**/*",
+      "assets/brand/**/*",
       "workpad.config.json"
     ],
     "win": {
-      "target": "portable"
+      "target": "portable",
+      "icon": "assets/brand/workpad-app-icon.ico"
     },
     "portable": {
       "artifactName": "Workpad-${version}-portable.exe"

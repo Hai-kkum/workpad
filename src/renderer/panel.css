@@ -6,9 +6,11 @@ body {
 /* 프레임리스 커스텀 헤더 = 창 이동 영역. 수동 드래그(pointer)로 처리해야 더블클릭 접기가 잡힘(-webkit-app-region:drag는 dblclick을 삼킴). */
 .head {
   display: flex; align-items: center; gap: 6px; height: 34px; box-sizing: border-box;
-  padding: 0 4px 0 12px; background: #f3f4f6; border-bottom: 1px solid #e3e5e8;
+  padding: 0 4px 0 9px; background: #f3f4f6; border-bottom: 1px solid #e3e5e8;
   cursor: move; user-select: none;
 }
+.brand { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.brand img { width: 22px; height: 22px; flex: 0 0 auto; }
 .logo { font-size: 14px; font-weight: 600; }
 .ver { font-size: 11px; color: #9aa1ab; }
 .hspace { flex: 1; }
