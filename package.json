@@ -1,7 +1,7 @@
 {
   "name": "workpad",
   "productName": "Workpad",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "상담사용 로컬 플로팅 카드 메모 도구 — 메모장을 대체하는 오프라인 워크벤치 (offline floating-card workpad for contact-center agents)",
   "license": "MIT",
   "author": "Hai-kkum",
