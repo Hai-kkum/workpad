@@ -399,7 +399,6 @@ function registerIpc() {
   });
   ipcMain.handle('panel:showAll', () => { for (const [id, win] of cards) if (!win.isDestroyed()) { win.show(); store.setVisible(id, true); } notifyPanel(); });
   ipcMain.handle('panel:hideAll', () => { for (const [id, win] of cards) if (!win.isDestroyed()) { win.hide(); store.setVisible(id, false); } notifyPanel(); });
-  ipcMain.handle('panel:toggleAll', () => toggleAll());
   // 섹션 탭 전환: 해당 섹션 카드만 화면에 표시, 나머지 숨김(엄격 격리). 전체=모두. (item 3)
   ipcMain.handle('panel:showSection', (_e, name) => {
     for (const [id, win] of cards) {

@@ -10,6 +10,9 @@ let sections = ['공통', '요금제', '부가서비스', '기타'];
 let activeTab = '전체';        // '전체' 또는 섹션명
 let allCards = [];             // 마지막 listCards 결과(탭 필터용)
 let panelCollapsed = false;
+let sectionDeleteMode = false;
+const FALLBACK_SECTION = '공통';
+const FIXED_SECTIONS = new Set([FALLBACK_SECTION]);
 
 // ── 카드 목록 + 섹션 필터 ───────────────────────────────────────────────
 // 검색 중에 패널 갱신(카드 focus·표시상태 변경 등)이 와도 검색 결과를 유지한다.
@@ -60,23 +63,63 @@ function renderCardList() {
 function refreshTabs() {
   const el = $('#tabs');
   el.innerHTML = '';
-  const mk = (name, label) => {
+  const mk = (name, label, removable = false) => {
     const b = document.createElement('span');
     b.className = 'tab' + (activeTab === name ? ' active' : '');
-    b.textContent = label || name;
+    const nameEl = document.createElement('span');
+    nameEl.textContent = label || name;
+    b.appendChild(nameEl);
+    if (removable) {
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'tabdel';
+      del.title = `${name} 섹션 삭제`;
+      del.setAttribute('aria-label', `${name} 섹션 삭제`);
+      del.textContent = '✕';
+      del.onclick = async (e) => {
+        e.stopPropagation();
+        await deleteSection(name);
+      };
+      b.appendChild(del);
+    }
     b.onclick = async () => { activeTab = name; refreshTabs(); await window.api.showSection(name); await refreshCards(); }; // 해당 섹션 카드 창 표시 + 목록 갱신
     return b;
   };
   el.appendChild(mk('전체'));
-  for (const s of sections) el.appendChild(mk(s));
+  for (const s of sections) el.appendChild(mk(s, s, sectionDeleteMode && !FIXED_SECTIONS.has(s)));
   const add = document.createElement('span');
   add.className = 'tab addtab'; add.textContent = '+'; add.title = '섹션 추가';
   add.onclick = () => startAddTab(el, add);
   el.appendChild(add);
+  const remove = document.createElement('span');
+  remove.className = 'tab modetab' + (sectionDeleteMode ? ' active' : '');
+  remove.textContent = '-';
+  remove.title = sectionDeleteMode ? '섹션 삭제 표시 끄기' : '섹션 삭제 표시';
+  remove.onclick = () => { sectionDeleteMode = !sectionDeleteMode; refreshTabs(); };
+  el.appendChild(remove);
+}
+
+async function deleteSection(name) {
+  if (FIXED_SECTIONS.has(name)) return;
+  const affected = (await window.api.listCards()).filter((c) => (c.section || FALLBACK_SECTION) === name);
+  const msg = affected.length
+    ? `'${name}' 섹션을 삭제하고 카드 ${affected.length}개를 '${FALLBACK_SECTION}'으로 옮길까요?`
+    : `'${name}' 섹션을 삭제할까요?`;
+  if (!window.confirm(msg)) return;
+
+  sections = sections.filter((s) => s !== name);
+  if (!sections.includes(FALLBACK_SECTION)) sections.unshift(FALLBACK_SECTION);
+  for (const c of affected) await window.api.updateCard(c.id, { section: FALLBACK_SECTION });
+  await window.api.updateSettings({ sections });
+  if (activeTab === name) activeTab = FALLBACK_SECTION;
+  refreshTabs();
+  await window.api.showSection(activeTab);
+  await refreshCards();
 }
 
 // Electron은 window.prompt 미지원 → 인라인 입력으로 섹션 추가.
 function startAddTab(el, addBtn) {
+  sectionDeleteMode = false;
   addBtn.style.display = 'none';
   const inp = document.createElement('input');
   inp.className = 'tabadd'; inp.placeholder = '새 섹션'; inp.style.cssText = 'width:72px;font-size:11px;padding:2px 6px;';
@@ -128,7 +171,7 @@ async function refreshStatus() {
   const st = $('#status');
   st.textContent = (s.keyProtected ? '로컬 암호화 적용(키 보호됨)' : '주의: 키가 보호되지 않음(DPAPI 불가) — 이 PC에서 데이터 보호가 약합니다') + ` · 카드 ${s.cardCount}개`;
   st.className = s.keyProtected ? 'status' : 'status warn';
-  $('#hotkeyHint').textContent = `전체 숨김 단축키: ${set.hotkeyHideAll || '(없음)'}`;
+  $('#hotkeyHint').textContent = `전체 표시/숨김 단축키: ${set.hotkeyHideAll || '(없음)'}`;
   $('#agentId').value = set.agentId || '';
   $('#maskPII').checked = set.maskPII !== false;
   // 데이터 이전 기능 게이팅(보안팀 배포 설정)
@@ -205,7 +248,6 @@ function wire() {
   });
   $('#showAll').onclick = async () => { activeTab = '전체'; refreshTabs(); await window.api.showAll(); refreshCards(); }; // 전체 표시는 전체 탭으로(목록/화면 일치)
   $('#hideAll').onclick = async () => { await window.api.hideAll(); refreshCards(); };
-  $('#toggleAll').onclick = async () => { await window.api.toggleAll(); refreshCards(); };
 
   $('#savePreset').onclick = async () => {
     const name = $('#presetName').value.trim();
