@@ -1,0 +1,32 @@
+name: Build
+
+# main 푸시 + 수동 실행 시 Windows 포터블(.exe)을 빌드해 아티팩트로 올린다.
+# 서명은 아직 없음(미서명 빌드) — 인증서 결정 후 별도 단계로 추가 예정.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build portable exe
+        run: npm run dist
+
+      - name: Upload portable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Workpad-portable
+          path: dist/*.exe
+          if-no-files-found: error
