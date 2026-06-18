@@ -12,7 +12,14 @@ let allCards = [];             // 마지막 listCards 결과(탭 필터용)
 let panelCollapsed = false;
 
 // ── 카드 목록 + 섹션 필터 ───────────────────────────────────────────────
-async function refreshCards() { allCards = await window.api.listCards(); renderCardList(); }
+// 검색 중에 패널 갱신(카드 focus·표시상태 변경 등)이 와도 검색 결과를 유지한다.
+// (검색 결과 클릭 → focusCard → notifyPanel → 여기로 들어와 목록으로 덮어쓰던 리셋 버그 방지)
+async function refreshCards() {
+  allCards = await window.api.listCards();
+  const search = document.querySelector('#search');
+  const q = search ? search.value.trim() : '';
+  if (q) await doSearch(q); else renderCardList();
+}
 
 // 화면에 뜨는 집합과 동일한 필터(엄격 격리): 전체=모두, 그 외=해당 섹션만.
 function inTab(c) {
@@ -216,7 +223,9 @@ function wire() {
   const updateClear = () => { searchClear.hidden = !search.value; };
   search.addEventListener('input', updateClear); // 입력 즉시 ✕ 표시/숨김
   search.addEventListener('input', debounce(() => { const q = search.value.trim(); if (q) doSearch(q); else renderCardList(); }, 200));
-  searchClear.addEventListener('click', () => { search.value = ''; updateClear(); renderCardList(); search.focus(); });
+  // ✕ 한 번에 지우기: click 대신 mousedown + preventDefault 로 처리.
+  // 한글 IME 조합 중에는 click 시 입력 포커스가 풀리며 조합 확정이 첫 클릭을 삼켜 여러 번 눌러야 지워지던 문제 해결.
+  searchClear.addEventListener('mousedown', (e) => { e.preventDefault(); search.value = ''; updateClear(); renderCardList(); search.focus(); });
   document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); search.focus(); search.select(); }
     if (e.key === 'Escape' && document.activeElement === search) { search.value = ''; updateClear(); renderCardList(); search.blur(); }

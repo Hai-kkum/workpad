@@ -246,6 +246,7 @@ function renderList(body) {
     '<div class="tokens" id="tokchips"></div>' +
     (isCall ?
       '<label class="tb">화면 말머리 <select id="timeDisp"><option value="time">시간만</option><option value="datetime">날짜+시간</option></select></label>'
+      + '<label class="tb" title="설정한 기간이 지난 줄은 다음 실행 시 자동으로 삭제됩니다(개인정보 보호). \'안 함\'이면 삭제하지 않습니다.">자동 삭제 <select id="ttlSel"><option value="0">안 함</option><option value="7">7일 후</option><option value="14">14일 후</option><option value="30">30일 후</option><option value="60">60일 후</option><option value="90">90일 후</option></select></label>'
       : '<label class="tb">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="callStart">통화 시작</option></select></label>');
   body.appendChild(fmtbox);
   const copyOnBox = fmtbox.querySelector('#copyOn');
@@ -281,6 +282,16 @@ function renderList(body) {
   if (timeDisp) { // 화면 말머리(.time)만 제어 — 복사 서식과 독립. 컴팩트하게 시간/날짜+시간만(기존 custom은 날짜+시간으로 표시).
     timeDisp.value = (card.timeDisplay === 'time') ? 'time' : 'datetime';
     timeDisp.addEventListener('change', () => { card.timeDisplay = timeDisp.value; saveCard({ timeDisplay: card.timeDisplay }); renderList(body); });
+  }
+  // 자동 삭제(보관기간) — 카드별. 0/미설정 = 삭제 안 함(purgeExpired 동작과 일치 → 기존 카드를 자동으로 삭제 켜지 않음). 변경은 다음 실행 시 반영.
+  const ttlSel = fmtbox.querySelector('#ttlSel');
+  if (ttlSel) {
+    const cur = String(card.ttlDays > 0 ? card.ttlDays : 0);
+    if (!Array.from(ttlSel.options).some((o) => o.value === cur)) { // 옵션에 없는 기존 커스텀 값 보존
+      const o = document.createElement('option'); o.value = cur; o.textContent = cur + '일 후'; ttlSel.appendChild(o);
+    }
+    ttlSel.value = cur;
+    ttlSel.addEventListener('change', () => { card.ttlDays = parseInt(ttlSel.value, 10) || 0; saveCard({ ttlDays: card.ttlDays }); });
   }
   document.getElementById('fmt').onclick = () => { fmtOpen = !fmtOpen; fmtbox.hidden = !fmtOpen; };
 
