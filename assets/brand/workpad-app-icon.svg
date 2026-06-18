@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Workpad app icon</title>
+  <desc id="desc">A rounded dark app icon with floating cards and a W mark.</desc>
+  <rect width="512" height="512" rx="96" fill="#161719"/>
+  <rect x="166" y="80" width="232" height="258" rx="42" fill="#E59B2F"/>
+  <rect x="112" y="128" width="260" height="260" rx="42" fill="#DFF2EF" stroke="#F5F7F9" stroke-width="22"/>
+  <rect x="178" y="156" width="254" height="254" rx="42" fill="#FFFFFF" stroke="#161719" stroke-width="22"/>
+  <path d="M232 232v122M232 354l43-88 43 88 43-122" fill="none" stroke="#009688" stroke-linecap="round" stroke-linejoin="round" stroke-width="34"/>
+  <path d="M237 211h145" fill="none" stroke="#161719" stroke-linecap="round" stroke-width="20"/>
+  <circle cx="219" cy="211" r="14" fill="#E59B2F"/>
+</svg>
