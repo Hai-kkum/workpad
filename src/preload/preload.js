@@ -42,7 +42,6 @@ contextBridge.exposeInMainWorld('api', {
   flashCard: (id) => ipcRenderer.invoke('panel:flashCard', id),
   showAll: () => ipcRenderer.invoke('panel:showAll'),
   hideAll: () => ipcRenderer.invoke('panel:hideAll'),
-  toggleAll: () => ipcRenderer.invoke('panel:toggleAll'),
   showSection: (name) => ipcRenderer.invoke('panel:showSection', name),
   onPanelRefresh: (cb) => ipcRenderer.on('panel:refresh', () => cb()),
   // 프리셋
