@@ -373,10 +373,12 @@ function renderMemo(body) {
     const masked = document.activeElement !== ta && !revealed && hasPII(ta.value);
     overlay.textContent = masked ? display(ta.value) : '';
     overlay.style.display = masked ? '' : 'none';
+    if (masked) overlay.scrollTop = ta.scrollTop; // 긴 메모: 가린 오버레이를 textarea 스크롤 위치에 맞춤
   };
   ta.addEventListener('input', () => saveCard({ content: { text: ta.value } }));
   ta.addEventListener('focus', syncOverlay);
   ta.addEventListener('blur', syncOverlay);
+  ta.addEventListener('scroll', () => { if (overlay.style.display !== 'none') overlay.scrollTop = ta.scrollTop; }); // 가린 상태 휠 스크롤 동기화(원문 노출 없이 아래 내용 확인)
   wrap.appendChild(ta); wrap.appendChild(overlay);
   body.appendChild(wrap);
   maskEls.push({ el: overlay, getRaw: () => ta.value, repaint: syncOverlay }); // 👁 토글·설정 변경 시 refreshMask가 호출

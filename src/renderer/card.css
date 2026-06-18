@@ -51,10 +51,12 @@ body {
 }
 /* 미포커스 시 PII 가린 표시(원문은 textarea가 보유). pointer-events:none 으로 클릭은 textarea로 통과 → 자동 숨김 */
 .memomask {
-  position: absolute; inset: 0; box-sizing: border-box; pointer-events: none; overflow: hidden;
+  position: absolute; inset: 0; box-sizing: border-box; pointer-events: none;
+  overflow-y: scroll; scrollbar-width: none; /* textarea 스크롤에 동기화 — 긴 메모를 가린 채로 스크롤(원문 노출 없이) */
   padding: 8px 10px; font: 13px/1.55 system-ui, "Malgun Gothic", sans-serif;
   color: #1f2328; background: #fff; white-space: pre-wrap; word-break: break-word;
 }
+.memomask::-webkit-scrollbar { display: none; }
 
 /* 목록(상용구 / 콜 메모) */
 .list { display: flex; flex-direction: column; }
