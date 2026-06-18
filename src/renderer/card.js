@@ -68,7 +68,7 @@ function paintMask(el, raw) {
   el.classList.toggle('masked', pii);
   el.classList.toggle('revealed', pii && revealed);
 }
-function refreshMask() { for (const m of maskEls) { if (m.el.isConnected) paintMask(m.el, m.getRaw()); } }
+function refreshMask() { for (const m of maskEls) { if (!m.el.isConnected) continue; if (m.repaint) m.repaint(); else paintMask(m.el, m.getRaw()); } }
 
 function setReveal(on) {
   revealed = !!on;
@@ -359,11 +359,28 @@ function renderList(body) {
 function renderMemo(body) {
   document.getElementById('fmt').style.display = 'none'; // 메모는 줄복사 없음
   body.innerHTML = '';
+  maskEls.length = 0; // 재렌더 시 표시 요소 레지스트리 초기화
+  const wrap = document.createElement('div');
+  wrap.className = 'memowrap';
   const ta = document.createElement('textarea');
   ta.className = 'memo'; ta.value = (card.content && card.content.text) || '';
-  ta.placeholder = '메모…';
+  ta.placeholder = '메모…'; ta.spellcheck = false;
+  // PII 마스킹 오버레이(SE-6): 미포커스 + PII 있음 + 비공개일 때 textarea 위에 가린 텍스트 표시.
+  // 원문은 항상 textarea가 보유(비파괴) — 포커스하면 오버레이를 숨겨 원문을 그대로 편집/복사.
+  const overlay = document.createElement('div');
+  overlay.className = 'memomask'; overlay.setAttribute('aria-hidden', 'true');
+  const syncOverlay = () => {
+    const masked = document.activeElement !== ta && !revealed && hasPII(ta.value);
+    overlay.textContent = masked ? display(ta.value) : '';
+    overlay.style.display = masked ? '' : 'none';
+  };
   ta.addEventListener('input', () => saveCard({ content: { text: ta.value } }));
-  body.appendChild(ta);
+  ta.addEventListener('focus', syncOverlay);
+  ta.addEventListener('blur', syncOverlay);
+  wrap.appendChild(ta); wrap.appendChild(overlay);
+  body.appendChild(wrap);
+  maskEls.push({ el: overlay, getRaw: () => ta.value, repaint: syncOverlay }); // 👁 토글·설정 변경 시 refreshMask가 호출
+  syncOverlay();
 }
 
 function renderTable(body) {
@@ -692,7 +709,7 @@ function setupBar() {
 
   const reveal = document.getElementById('reveal'); // 👁 PII 잠시 공개(자동 재마스킹 + 워터마크)
   reveal.onclick = () => setReveal(!revealed);
-  if (card.type === 'memo') reveal.style.display = 'none'; // 메모는 자유 텍스트(마스킹 비적용)
+  // 메모 카드도 PII 마스킹(SE-6, 오버레이) 적용 → 👁 공개 버튼 유지
 }
 
 // 붙여넣기는 항상 평문(text/plain)으로 삽입 — 리치 텍스트(예: 링크 앵커 'NAVER')가 아니라 원본 문자열(URL 등)이 들어가게.
