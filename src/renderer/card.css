@@ -42,8 +42,9 @@ body {
 .body { flex: 1; min-height: 0; overflow: auto; -webkit-app-region: no-drag; }
 .collapsed .body { display: none; }
 
-/* 메모(자유 텍스트) */
+/* 메모(자유 텍스트) — display:block 으로 inline 기본값의 baseline 여백 제거(스크롤바 이중 표시 방지) */
 .memo {
+  display: block;
   width: 100%; height: 100%; box-sizing: border-box; border: 0; outline: none; resize: none;
   padding: 8px 10px; font: 13px/1.55 system-ui, "Malgun Gothic", sans-serif; color: #1f2328; background: #fff;
 }
