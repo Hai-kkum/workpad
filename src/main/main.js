@@ -135,8 +135,8 @@ function defaultCard(type, section) {
   if (type === 'table') {
     return { ...base, title: '표', bounds: { x, y, width: 320, height: 240 }, rows: [['항목', '값'], ['', '']] };
   }
-  if (type === 'todo') {
-    return { ...base, title: '할일', bounds: { x, y, width: 260, height: 220 }, lines: [] };
+  if (type === 'todo') { // WM-A: 별도 타입이 아니라 줄카드(snippet)+checklist 조합의 단축. 복사는 기본 off.
+    return { ...base, type: 'snippet', title: '할일', checklist: true, copyMode: false, bounds: { x, y, width: 260, height: 220 }, lines: [] };
   }
   return {
     ...base, title: '상용구', bounds: { x, y, width: 280, height: 220 },

@@ -157,3 +157,37 @@ body.tedit .tbl td { cursor: text; }                  /* 편집 모드 = 칸이 
 .fmtbox select { font-size: 11px; padding: 2px 4px; border: 1px solid #d7dbe0; border-radius: 4px; }
 .allcopy { -webkit-app-region: no-drag; margin: 6px 8px 0; padding: 5px 10px; border: 1px solid #d7dbe0; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; }
 .allcopy:hover { background: #f3f4f6; }
+
+/* WM-A 하단 포맷 바: 배경색 스와치 + 체크박스 토글. #body 재렌더와 분리(별도 footer). */
+.wmbar {
+  flex: 0 0 auto; -webkit-app-region: no-drag;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 3px 12px;
+  padding: 4px 8px; border-top: 1px solid #eef0f3; background: #fbfcfd;
+}
+.wmbar[hidden] { display: none; }
+.collapsed .wmbar { display: none; }
+.wmbar .wmgroup { display: flex; align-items: center; gap: 4px; }
+.wmbar .wmlbl { font-size: 11px; color: #9aa1ab; margin-right: 1px; }
+.wmbar .sw { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #cdd2d9; cursor: pointer; padding: 0; position: relative; }
+.wmbar .sw.none { background: #fff; }
+.wmbar .sw.none::after { content: '✕'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #b6bcc5; }
+.wmbar .sw.active { outline: 2px solid #2563eb; outline-offset: 1px; border-color: #2563eb; }
+.wmbar .wmchk { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #374151; cursor: pointer; }
+
+/* 줄 강조(WM-4, 표시 전용). 행 배경 — 마스킹된 .text 음영은 그 위에 표시. 복사·검색·마스킹은 원문 불변. */
+.row.hl-yellow { background: #fff3bf; }
+.row.hl-green { background: #d3f9d8; }
+.row.hl-blue { background: #d0ebff; }
+.row.hl-pink { background: #ffdeeb; }
+
+/* 줄 우클릭 메뉴 강조 스와치 행(.ctxmenu button 빨강·블록 규칙을 높은 특이도로 덮음) */
+.ctxmenu .hlrow { display: flex; gap: 5px; padding: 3px 6px 6px; border-bottom: 1px solid #f1f2f4; margin-bottom: 3px; }
+.ctxmenu .hlrow .hlsw { width: 17px; height: 17px; border-radius: 50%; border: 1px solid #cdd2d9; cursor: pointer; padding: 0; display: inline-block; position: relative; }
+.ctxmenu .hlrow .hlsw.none { background: #fff; }
+.ctxmenu .hlrow .hlsw.none::after { content: '✕'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #b6bcc5; }
+.ctxmenu .hlrow .hlsw.hl-yellow { background: #fff3bf; }
+.ctxmenu .hlrow .hlsw.hl-green { background: #d3f9d8; }
+.ctxmenu .hlrow .hlsw.hl-blue { background: #d0ebff; }
+.ctxmenu .hlrow .hlsw.hl-pink { background: #ffdeeb; }
+.ctxmenu .hlrow .hlsw.active { outline: 2px solid #2563eb; outline-offset: 1px; border-color: #2563eb; }
+.ctxmenu .hlrow .hlsw:hover { transform: scale(1.12); }

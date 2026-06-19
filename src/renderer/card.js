@@ -112,8 +112,9 @@ async function copyRow(text, raw, row, btn, when) {
 function makeRow(line) {
   const row = document.createElement('div');
   row.className = 'row';
+  if (line.hl) row.classList.add('hl-' + line.hl); // WM-4 줄 강조(표시 전용 — 복사·마스킹·검색 불변)
 
-  if (card.type === 'todo') { // 할일: 줄마다 체크박스(완료 토글). 행 클릭/복사와 분리되도록 이벤트 차단.
+  if (card.checklist) { // 체크박스 토글(WM-1): 줄마다 완료 체크박스. 행 클릭/복사와 분리되도록 이벤트 차단.
     const chk = document.createElement('input');
     chk.type = 'checkbox'; chk.className = 'todochk'; chk.checked = !!line.done;
     if (line.done) row.classList.add('done');
@@ -200,6 +201,26 @@ function showRowMenu(x, y, line, row) {
   closeRowMenu();
   const menu = document.createElement('div');
   menu.className = 'ctxmenu'; menu.id = 'rowmenu';
+
+  // 줄 강조(WM-4, 표시 전용): 색 선택 → line.hl. 복사·마스킹·검색은 원문 그대로(불변).
+  const hlrow = document.createElement('div');
+  hlrow.className = 'hlrow';
+  [['', 'none'], ['yellow'], ['green'], ['blue'], ['pink']].forEach(([k]) => {
+    const sw = document.createElement('button');
+    sw.type = 'button'; sw.className = 'hlsw' + (k ? ' hl-' + k : ' none');
+    sw.title = k ? '강조' : '강조 지움';
+    if ((line.hl || '') === k) sw.classList.add('active');
+    sw.addEventListener('click', () => {
+      line.hl = k || undefined;
+      ['hl-yellow', 'hl-green', 'hl-blue', 'hl-pink'].forEach((c) => row.classList.remove(c));
+      if (k) row.classList.add('hl-' + k);
+      persistLines();
+      closeRowMenu();
+    });
+    hlrow.appendChild(sw);
+  });
+  menu.appendChild(hlrow);
+
   const del = document.createElement('button');
   del.type = 'button'; del.textContent = '줄 삭제';
   del.addEventListener('click', () => {
@@ -236,11 +257,11 @@ function showRowMenu(x, y, line, row) {
 function renderList(body) {
   body.innerHTML = '';
   maskEls.length = 0; // 재렌더 시 표시 요소 레지스트리 초기화
-  document.getElementById('fmt').style.display = card.type === 'todo' ? 'none' : ''; // 할일은 복사 서식 불필요
+  document.getElementById('fmt').style.display = ''; // 줄카드는 복사 서식 사용(체크박스 토글과 무관)
 
   // 복사 서식 편집 박스 (목록형 카드만). 재렌더(옵션 변경 등) 후에도 열림 상태 유지(fmtOpen).
   const fmtbox = document.createElement('div');
-  fmtbox.className = 'fmtbox'; fmtbox.hidden = !fmtOpen || card.type === 'todo';
+  fmtbox.className = 'fmtbox'; fmtbox.hidden = !fmtOpen;
   const isCall = card.type === 'callmemo';
   // 화면 말머리(.time)와 복사 서식을 분리: 복사 서식(fmtTpl)은 모든 토큰 자유 편집, 화면 말머리는 컴팩트(시간/날짜+시간)만.
   fmtbox.innerHTML =
@@ -319,7 +340,7 @@ function renderList(body) {
   const addLine = (txt) => {
     const ln = { text: txt };
     if (card.type === 'callmemo') ln.t = Date.now();
-    if (card.type === 'todo') ln.done = false;
+    if (card.checklist) ln.done = false;
     card.lines.push(ln);
     list.insertBefore(makeRow(ln), ghost);
     persistLines();
@@ -733,11 +754,63 @@ function forcePlainPaste(e) {
   document.execCommand('insertText', false, cd.getData('text/plain'));
 }
 
+// ── WM-A 포맷 툴바 (배경색 + 체크박스 토글) ──────────────────────────────
+// 배경색 스와치(밝은 톤 — 어두운 글자 가독성 유지). 첫 값 ''=배경 없음(흰색).
+const BG_SWATCHES = ['', '#fffbe6', '#eef4ff', '#eafaf0', '#fdeef2', '#f1ecfb', '#eef0f3'];
+
+// card.bg를 카드 전체 배경에 적용. 메모는 textarea·오버레이를 같은 불투명색으로(마스킹 무결성 유지).
+function applyCardBg() {
+  const bg = card.bg || '#fff';
+  document.body.style.background = bg;
+  document.querySelectorAll('.memo, .memomask').forEach((el) => { el.style.background = bg; });
+}
+
+function renderFormatBar() {
+  const bar = document.getElementById('wmbar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  bar.hidden = false;
+
+  const bgGroup = document.createElement('div'); bgGroup.className = 'wmgroup';
+  const lbl = document.createElement('span'); lbl.className = 'wmlbl'; lbl.textContent = '배경'; bgGroup.appendChild(lbl);
+  BG_SWATCHES.forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'sw' + (c ? '' : ' none');
+    if (c) b.style.background = c;
+    b.title = c ? '배경색' : '배경 없음';
+    if ((card.bg || '') === c) b.classList.add('active');
+    b.addEventListener('click', () => {
+      card.bg = c || undefined; saveCard({ bg: card.bg }); applyCardBg();
+      bgGroup.querySelectorAll('.sw').forEach((s) => s.classList.remove('active')); b.classList.add('active');
+    });
+    bgGroup.appendChild(b);
+  });
+  bar.appendChild(bgGroup);
+
+  // 체크박스 토글: 줄카드(상용구/콜메모)만. 켜면 줄마다 완료 체크박스(WM-1 일반화).
+  if (card.type === 'snippet' || card.type === 'callmemo') {
+    const chkLbl = document.createElement('label'); chkLbl.className = 'wmchk';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!card.checklist;
+    cb.addEventListener('change', () => {
+      card.checklist = cb.checked || undefined; saveCard({ checklist: card.checklist });
+      renderList(document.getElementById('body')); // 체크박스 표시 즉시 반영
+    });
+    chkLbl.appendChild(cb); chkLbl.appendChild(document.createTextNode(' 체크박스'));
+    bar.appendChild(chkLbl);
+  }
+}
+
 async function init() {
   card = await window.api.getCard(ID);
   settings = await window.api.getSettings();
   try { env = await window.api.getEnv(); } catch (_) {} // 워터마크용 PC명
   if (!card) { document.body.innerHTML = '<div class="hint">카드를 찾을 수 없습니다.</div>'; return; }
+  // WM-A: 별도 'todo' 타입 폐지 → 줄카드(snippet) + checklist 로 일반화. 기존 할일 카드 마이그레이션(줄·완료상태 보존, 복사는 off).
+  if (card.type === 'todo') {
+    card.type = 'snippet'; card.checklist = true;
+    if (card.copyMode == null) card.copyMode = false;
+    window.api.updateCard(ID, { type: 'snippet', checklist: true, copyMode: card.copyMode });
+  }
   // 레거시 콜메모 마이그레이션: timeDisplay 없는 카드의 화면/복사 시각 불일치 방지.
   if (card.type === 'callmemo' && !card.timeDisplay) {
     const tpl = (card.format && card.format.template) || '';
@@ -771,6 +844,8 @@ async function init() {
   if (card.type === 'memo') renderMemo(body);
   else if (card.type === 'table') renderTable(body);
   else renderList(body);
+  renderFormatBar(); // 하단 포맷 바(배경색 + 체크박스 토글) — #body 재렌더와 무관하게 유지
+  applyCardBg();     // 저장된 배경색 적용(메모 textarea/오버레이 포함)
 }
 
 init();
