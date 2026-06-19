@@ -6,6 +6,12 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 const escapeHtml = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const typeLabel = (t) => ({ snippet: '상용구', callmemo: '기록', memo: '메모', table: '표', todo: '할일' }[t] || t);
 
+// 헤더 아이콘: 얇은 글리프(📌·—·▁)를 또렷한 SVG로 — 핀(항상위) + 접기/펼치기 셰브론 + 최소화 바.
+const PIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+const CHEVRON_UP_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l6-6 6 6"/></svg>';
+const CHEVRON_DOWN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10l6 6 6-6"/></svg>';
+const MIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>';
+
 let sections = ['공통', '요금제', '부가서비스', '기타'];
 let activeTab = '전체';        // '전체' 또는 섹션명
 let allCards = [];             // 마지막 listCards 결과(탭 필터용)
@@ -82,7 +88,7 @@ function refreshTabs() {
       };
       b.appendChild(del);
     }
-    b.onclick = async () => { activeTab = name; refreshTabs(); await window.api.showSection(name); await refreshCards(); }; // 해당 섹션 카드 창 표시 + 목록 갱신
+    b.onclick = async () => { activeTab = name; sectionDeleteMode = false; refreshTabs(); await window.api.showSection(name); await refreshCards(); }; // 탭 전환=섹션 카드 표시 + 삭제모드 해제(item 1)
     return b;
   };
   el.appendChild(mk('전체'));
@@ -189,9 +195,14 @@ async function refreshStatus() {
   } else { note.style.display = 'none'; }
 }
 
+function setPanelFoldIcon() {
+  const f = $('#pFold');
+  if (f) f.innerHTML = panelCollapsed ? CHEVRON_DOWN_SVG : CHEVRON_UP_SVG; // 접힘=펼치기(∨) / 펼침=접기(∧)
+}
 function toggleFold() {
   panelCollapsed = !panelCollapsed;
   document.body.classList.toggle('collapsed', panelCollapsed);
+  setPanelFoldIcon();
   window.api.panelCollapse(panelCollapsed);
 }
 
@@ -280,6 +291,18 @@ function wire() {
   phead.addEventListener('dblclick', (e) => { if (e.target.closest('.pbtn')) return; toggleFold(); });
   $('#pMin').onclick = () => window.api.panelMinimize();
   $('#pClose').onclick = () => window.api.panelClose();
+  // 헤더 아이콘 주입(핀/최소화/접기) — 얇은 글리프 대신 또렷한 SVG
+  $('#pPin').innerHTML = PIN_SVG;
+  $('#pMin').innerHTML = MIN_SVG;
+  setPanelFoldIcon();
+
+  // 섹션 삭제 모드(− 마이너스): 삭제 ✕/토글 밖(빈 곳·다른 영역)을 클릭하면 모드 해제(item 1).
+  document.addEventListener('click', (e) => {
+    if (!sectionDeleteMode) return;
+    if (e.target.closest('.tabdel') || e.target.closest('.modetab')) return; // 삭제 ✕·토글은 유지(여러 개 삭제)
+    sectionDeleteMode = false;
+    refreshTabs();
+  });
 
   // 헤더 수동 드래그(카드와 동일): pointer capture + 4px 임계값으로 더블클릭(접기)과 분리.
   let pdrag = null;

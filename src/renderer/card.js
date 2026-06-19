@@ -4,6 +4,10 @@
 const COPY_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
 const CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l5 5L19 7"/></svg>';
 const PENCIL_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L18 10l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>';
+// 헤더 아이콘: 얇은 글리프(위·—)를 또렷한 SVG로 — 핀(항상위) + 접기/펼치기 셰브론(상태별 ∧/∨).
+const PIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+const CHEVRON_UP_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l6-6 6 6"/></svg>';
+const CHEVRON_DOWN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10l6 6 6-6"/></svg>';
 
 const ID = new URLSearchParams(location.search).get('id');
 let card = null;
@@ -657,6 +661,7 @@ function setupBar() {
   title.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); title.blur(); } });
 
   const pin = document.getElementById('pin');
+  pin.innerHTML = PIN_SVG;
   if (card.alwaysOnTop) pin.classList.add('active');
   pin.onclick = () => {
     card.alwaysOnTop = !card.alwaysOnTop;
@@ -665,11 +670,14 @@ function setupBar() {
   };
 
   const fold = document.getElementById('fold');
+  const setFoldIcon = () => { fold.innerHTML = card.collapsed ? CHEVRON_DOWN_SVG : CHEVRON_UP_SVG; }; // 접힘=펼치기(∨) / 펼침=접기(∧)
   if (card.collapsed) document.documentElement.classList.add('collapsed');
+  setFoldIcon();
   const setCollapsed = (val) => {
     if (!!card.collapsed === !!val) return;
     card.collapsed = !!val;
     document.documentElement.classList.toggle('collapsed', card.collapsed);
+    setFoldIcon();
     window.api.collapse(ID, card.collapsed);
   };
   setCardCollapsed = setCollapsed; // 패널 더블클릭 신호에서 펼치기 호출(item 1)

@@ -16,13 +16,12 @@ body {
 .hspace { flex: 1; }
 .pbtn {
   border: 0; background: transparent; color: #6b7280;
+  display: inline-flex; align-items: center; justify-content: center;
   font-size: 12px; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; line-height: 1; padding: 0;
 }
 .pbtn:hover { background: #e5e7eb; color: #111; }
-.pbtn.active { background: #fdecea; }
-/* 항상 위 핀(📌은 이모지라 color 무시) — 끄면 회색(grayscale), 켜면 원래 빨강 */
-#pPin { filter: grayscale(1); opacity: .5; }
-#pPin.active { filter: none; opacity: 1; }
+/* 항상 위 ON = 파랑(카드 핀과 통일). SVG라 currentColor로 색 적용됨 */
+.pbtn.active { color: #2563eb; background: #dbeafe; }
 .content { padding: 0 12px 12px; height: calc(100vh - 34px); box-sizing: border-box; overflow-y: auto; }
 body.collapsed .content { display: none; }
 
