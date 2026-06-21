@@ -14,7 +14,7 @@ https://signpath.org/ → "Join the community" 신청 폼
 | Repository | https://github.com/Hai-kkum/workpad |
 | License | MIT |
 | Platform | Windows (Electron) |
-| Description (EN) | Fully-local, offline floating-card memo tool for contact-center agents. AES-256-GCM local encryption, PII masking, zero external communication, no telemetry. |
+| Description (EN) | Fully-local, offline floating-card memo tool for office workers (including contact-center agents). AES-256-GCM local encryption, PII masking, zero external communication, no telemetry. |
 | Build / CI | GitHub Actions (`.github/workflows/build.yml`), electron-builder portable |
 | Maintainer | Hai-kkum |
 
