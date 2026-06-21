@@ -1,6 +1,6 @@
 # SignPath Foundation 신청 정보 (Workpad)
 
-> 2026-06-18 작성. 서명 게시자 = **SignPath Foundation(무료)** 확정 → [DECISION-MEMO D1](DECISION-MEMO-배포서명-2026-06-16.md).
+> 2026-06-18 작성. 서명 게시자 = **SignPath Foundation(무료)** 확정.
 > 신청은 웹 폼(사용자 직접 제출). 승인되면 CI 워크플로에 서명 단계를 통합한다.
 
 ## 신청처
@@ -38,4 +38,3 @@ https://signpath.org/ → "Join the community" 신청 폼
 ## 참고
 - 심사 기간: 수일~수주
 - 태그(`v*`) 푸시 시 CI가 포터블을 GitHub Release에 첨부 (build.yml release job) → "released" 조건 강화
-- 보안팀 4질문(DECISION-MEMO Q2)은 서명과 별개 트랙 (스택·사내 배포 정책)
