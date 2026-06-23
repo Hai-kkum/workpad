@@ -733,6 +733,37 @@ function forcePlainPaste(e) {
   document.execCommand('insertText', false, cd.getData('text/plain'));
 }
 
+// ── 카드 배경색 (WM-A 포맷 툴바의 배경색 파트) ──────────────────────────────
+// 배경색 스와치(밝은 톤 — 어두운 글자 가독성 유지). 첫 값 ''=배경 없음(흰색).
+const BG_SWATCHES = ['', '#fffbe6', '#eef4ff', '#eafaf0', '#fdeef2', '#f1ecfb', '#eef0f3'];
+// card.bg를 카드 전체 배경에 적용. 메모는 textarea·오버레이를 같은 불투명색으로(마스킹 무결성 유지).
+function applyCardBg() {
+  const bg = card.bg || '#fff';
+  document.body.style.background = bg;
+  document.querySelectorAll('.memo, .memomask').forEach((el) => { el.style.background = bg; });
+}
+function renderFormatBar() {
+  const bar = document.getElementById('wmbar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  bar.hidden = false;
+  const bgGroup = document.createElement('div'); bgGroup.className = 'wmgroup';
+  const lbl = document.createElement('span'); lbl.className = 'wmlbl'; lbl.textContent = '배경'; bgGroup.appendChild(lbl);
+  BG_SWATCHES.forEach((c) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'sw' + (c ? '' : ' none');
+    if (c) b.style.background = c;
+    b.title = c ? '배경색' : '배경 없음';
+    if ((card.bg || '') === c) b.classList.add('active');
+    b.addEventListener('click', () => {
+      card.bg = c || undefined; saveCard({ bg: card.bg }); applyCardBg();
+      bgGroup.querySelectorAll('.sw').forEach((s) => s.classList.remove('active')); b.classList.add('active');
+    });
+    bgGroup.appendChild(b);
+  });
+  bar.appendChild(bgGroup);
+}
+
 async function init() {
   card = await window.api.getCard(ID);
   settings = await window.api.getSettings();
@@ -771,6 +802,8 @@ async function init() {
   if (card.type === 'memo') renderMemo(body);
   else if (card.type === 'table') renderTable(body);
   else renderList(body);
+  renderFormatBar(); // 하단 배경색 바 — #body 재렌더와 무관하게 유지
+  applyCardBg();     // 저장된 배경색 적용(메모 textarea/오버레이 포함)
 }
 
 init();

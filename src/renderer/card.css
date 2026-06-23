@@ -43,6 +43,21 @@ body {
 .body { flex: 1; min-height: 0; overflow: auto; -webkit-app-region: no-drag; }
 .collapsed .body { display: none; }
 
+/* 하단 배경색 바(WM-A 배경색 파트) — #body 재렌더와 분리된 footer */
+.wmbar {
+  flex: 0 0 auto; -webkit-app-region: no-drag;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 3px 12px;
+  padding: 4px 8px; border-top: 1px solid #eef0f3; background: #fbfcfd;
+}
+.wmbar[hidden] { display: none; }
+.collapsed .wmbar { display: none; }
+.wmbar .wmgroup { display: flex; align-items: center; gap: 4px; }
+.wmbar .wmlbl { font-size: 11px; color: #9aa1ab; margin-right: 1px; }
+.wmbar .sw { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #cdd2d9; cursor: pointer; padding: 0; position: relative; }
+.wmbar .sw.none { background: #fff; }
+.wmbar .sw.none::after { content: '✕'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #b6bcc5; }
+.wmbar .sw.active { outline: 2px solid #2563eb; outline-offset: 1px; border-color: #2563eb; }
+
 /* 메모(자유 텍스트) — 마스킹 오버레이용 래퍼. display:block 으로 inline baseline 여백 제거(스크롤바 이중 표시 방지) */
 .memowrap { position: relative; width: 100%; height: 100%; }
 .memo {
