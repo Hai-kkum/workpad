@@ -37,6 +37,12 @@
       const d = m.replace(/\D/g, '');
       return (d.length === 13 && validRRN(d)) ? d.slice(0, 6) + '-' + d[6] + '******' : m;
     });
+    // 휴대폰 번호(010/011/016~019, 10~11자리): 앞 3 + 뒤 4만 남기고 가운데 가림.
+    // 앞뒤 숫자 경계(lookbehind/ahead)로 카드·주민 등 더 긴 숫자열의 일부를 오탐하지 않게.
+    s = s.replace(/(?<!\d)01[016789](?:[\s.\-]?\d){7,8}(?!\d)/g, (m) => {
+      const d = m.replace(/\D/g, '');
+      return (d.length === 10 || d.length === 11) ? d.slice(0, 3) + '-****-' + d.slice(-4) : m;
+    });
     return s;
   }
   // PII 포함 여부(표시용 마스킹과 원문이 다른가).

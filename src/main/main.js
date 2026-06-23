@@ -16,6 +16,7 @@ const PANEL_HEAD_H = 34; // 패널 접힘 높이(커스텀 헤더만)
 const PRELOAD = path.join(__dirname, '..', 'preload', 'preload.js');
 const CARD_HTML = path.join(__dirname, '..', 'renderer', 'card.html');
 const PANEL_HTML = path.join(__dirname, '..', 'renderer', 'panel.html');
+const UNLOCK_HTML = path.join(__dirname, '..', 'renderer', 'unlock.html');
 const APP_ICON = path.join(__dirname, '..', '..', 'assets', 'brand', 'workpad-app-icon-256.png');
 const isDev = process.argv.includes('--dev');
 
@@ -27,6 +28,7 @@ process.on('uncaughtException', (e) => logf('uncaughtException: ' + (e && e.stac
 process.on('unhandledRejection', (e) => logf('unhandledRejection: ' + (e && e.stack || e)));
 
 let panelWin = null;   // 컨트롤 패널
+let booted = false;    // boot() 1회만(재진입·중복 IPC 등록 방지)
 const cards = new Map(); // id -> BrowserWindow
 const cardOwners = new Map(); // id -> 카드별 숨은 owner 창. 카드마다 개별 owner라야 클릭 시 그 카드만 앞으로 옴(공유 owner면 그룹 전체가 올라옴).
 
@@ -93,6 +95,8 @@ function debounce(fn, ms) {
   return (...a) => { if (t) clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 function newId() { return crypto.randomUUID(); }
+// IPC 발신 창 검증(권한 없는 렌더러가 잠금 해제·키 제어를 호출하지 못하게, Codex P2).
+const isFrom = (event, win) => !!win && !win.isDestroyed() && event.sender === win.webContents;
 
 // ready-to-show / did-finish-load / 타임아웃 중 먼저 오는 시점에 표시. 렌더러 진단 로그도 수집.
 function wireWindow(win, shouldShow, label) {
@@ -305,7 +309,26 @@ function registerIpc() {
     if (Object.prototype.hasOwnProperty.call(patch, 'hotkeyHideAll')) applyHotkey(s.hotkeyHideAll);
     return s;
   });
-  ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), cardCount: cards.size, loadError: store.getLoadError(), allowDataTransfer: appConfig.allowDataTransfer !== false }));
+  ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), keyMode: store.getKeyMode(), cardCount: cards.size, loadError: store.getLoadError(), allowDataTransfer: appConfig.allowDataTransfer !== false }));
+  // 비밀번호 잠금(SE-9) 관리 — 패널 창에서만 호출(발신자 검증, Codex P2). 비밀번호 = 숫자 6자리. 분실 시 복구불가(설계상).
+  const PIN = /^\d{6}$/;
+  ipcMain.handle('lock:status', (e) => (isFrom(e, panelWin) ? { mode: store.getKeyMode() } : { mode: null }));
+  ipcMain.handle('lock:enable', (e, pass) => {
+    if (!isFrom(e, panelWin)) return { ok: false, reason: 'denied' };
+    if (!PIN.test(String(pass || ''))) return { ok: false, reason: 'weak' };
+    return { ok: store.setPassphrase(pass) };
+  });
+  ipcMain.handle('lock:change', (e, oldPass, newPass) => {
+    if (!isFrom(e, panelWin)) return { ok: false, reason: 'denied' };
+    if (!PIN.test(String(newPass || ''))) return { ok: false, reason: 'weak' };
+    if (!store.changePassphrase(oldPass, newPass)) return { ok: false, reason: 'badold' };
+    return { ok: true };
+  });
+  ipcMain.handle('lock:disable', (e, pass) => {
+    if (!isFrom(e, panelWin)) return { ok: false, reason: 'denied' };
+    if (!store.removePassphrase(pass)) return { ok: false, reason: 'badpass' };
+    return { ok: true, protected: store.isKeyProtected() };
+  });
   // 암호 보호 내보내기(PC 이전/백업). 보안팀이 막아 배포하면(allowDataTransfer:false) 거부.
   ipcMain.handle('data:export', async (_e, pass) => {
     if (appConfig.allowDataTransfer === false) return { ok: false, reason: 'disabled' };
@@ -439,6 +462,70 @@ function registerIpc() {
   });
 }
 
+// 데이터 로드 이후의 본 기동(IPC·패널·카드·단축키). 비밀번호 모드면 잠금 해제 성공 후 호출.
+function boot() {
+  if (booted) return; // 재진입 방지(중복 IPC 등록·창 복원 차단, Codex P2)
+  booted = true;
+  registerIpc(); // owner 창은 카드 생성 시 카드별로 만든다(createCardWindow)
+  createPanel();
+  const saved = Object.values(store.getState().cards);
+  logf('restoring cards: ' + saved.length);
+  if (saved.length === 0) {
+    const sample = defaultCard('snippet');
+    store.addCard(sample);
+    createCardWindow(sample, true);
+  } else {
+    for (const c of saved) createCardWindow(c, c.visible !== false);
+  }
+  applyHotkey(store.getSettings().hotkeyHideAll);
+  logf('startup complete, windows=' + (cards.size + 1));
+}
+
+// 비밀번호 잠금(SE-9) 해제 창. 해제 전엔 데이터 미로드 → 다른 창은 안 띄움.
+let unlockWin = null;
+function createUnlockWindow() {
+  unlockWin = new BrowserWindow({
+    width: 360, height: 250, resizable: false, frame: false,
+    maximizable: false, minimizable: false, fullscreenable: false,
+    backgroundColor: '#ffffff', icon: APP_ICON, title: 'Workpad',
+    webPreferences: { preload: PRELOAD, contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  wireWindow(unlockWin, true, 'unlock');
+  unlockWin.loadFile(UNLOCK_HTML);
+  // 잠금 해제 없이 닫으면(데이터 미로드 상태) 종료.
+  unlockWin.on('closed', () => { const w = unlockWin; unlockWin = null; if (w && !store.getState()) app.quit(); });
+}
+
+// 잠금 창이 쓰는 IPC만 먼저 등록(본 IPC는 boot에서 — 해제 전엔 데이터가 없어 호출 불가).
+function registerUnlockIpc() {
+  ipcMain.handle('unlock:try', (e, pass) => {
+    if (booted || !isFrom(e, unlockWin)) return false; // 잠금 창에서만 + 1회만(Codex P2)
+    const ok = store.unlockWithPassphrase(pass);
+    if (ok) {
+      logf('unlock ok, keyProtected=' + store.isKeyProtected());
+      const w = unlockWin; unlockWin = null;
+      boot();
+      ipcMain.removeHandler('unlock:try'); ipcMain.removeHandler('unlock:quit'); // 해제 후 채널 제거(재호출 차단)
+      if (w && !w.isDestroyed()) w.close();
+    }
+    return ok;
+  });
+  ipcMain.handle('unlock:quit', (e) => { if (isFrom(e, unlockWin)) app.quit(); });
+}
+
+// 키를 안전하게 열 수 없을 때(DPAPI 불가/손상): 데이터를 건드리지 않고 알린 뒤 종료(fail-closed, 데이터 리셋 방지, Codex P1).
+function showFatalKeyError(detail) {
+  logf('fatal key error: ' + detail);
+  try {
+    dialog.showMessageBoxSync({
+      type: 'error', title: 'Workpad',
+      message: '데이터 키를 열 수 없어 안전하게 시작할 수 없습니다.',
+      detail: detail + '\n\n데이터·키 파일은 그대로 보존했습니다(초기화하지 않음). 관리자에게 문의하거나 백업에서 복원하세요.',
+    });
+  } catch (_) {}
+  app.quit();
+}
+
 app.whenReady().then(() => {
   try {
     if (!isPrimary) return; // 2차 인스턴스는 창을 만들지 않고 종료
@@ -450,29 +537,28 @@ app.whenReady().then(() => {
       { role: 'editMenu' },
       ...(isDev ? [{ role: 'viewMenu' }] : []),
     ]));
-    store.init();
-    logf('store init ok, keyProtected=' + store.isKeyProtected());
-
+    // 외부 내비게이션/창 열기 차단 — 잠금 창 포함 모든 창에 적용되도록 데이터 로드 전에 설치.
     app.on('web-contents-created', (_e, wc) => {
       wc.setWindowOpenHandler(() => ({ action: 'deny' }));
       wc.on('will-navigate', (e) => e.preventDefault());
     });
+    registerUnlockIpc();
 
-    registerIpc(); // owner 창은 카드 생성 시 카드별로 만든다(createCardWindow)
-    createPanel();
-
-    const saved = Object.values(store.getState().cards);
-    logf('restoring cards: ' + saved.length);
-    if (saved.length === 0) {
-      const sample = defaultCard('snippet');
-      store.addCard(sample);
-      createCardWindow(sample, true);
+    const mode = store.probeKeyMode();
+    logf('key mode: ' + mode);
+    if (mode === 'passphrase') {
+      createUnlockWindow(); // 해제 성공 시 unlock:try 핸들러가 boot() 호출
+    } else if (mode === 'invalid') {
+      showFatalKeyError('키 파일이 비었거나 형식을 알 수 없습니다.'); // Codex P1: 평문 오인 대신 안전 중단
     } else {
-      for (const c of saved) createCardWindow(c, c.visible !== false);
+      try {
+        store.init();
+        logf('store init ok, keyProtected=' + store.isKeyProtected());
+        boot();
+      } catch (e) {
+        showFatalKeyError('키 보호를 열 수 없습니다(DPAPI/safeStorage 불가 또는 키 손상).'); // Codex P1: fail-closed
+      }
     }
-
-    applyHotkey(store.getSettings().hotkeyHideAll);
-    logf('startup complete, windows=' + (cards.size + 1));
   } catch (e) {
     logf('whenReady ERROR: ' + (e && e.stack || e));
   }

@@ -6,22 +6,54 @@ const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = se
 const escapeHtml = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 const typeLabel = (t) => ({ snippet: '상용구', callmemo: '기록', memo: '메모', table: '표', todo: '할일' }[t] || t);
 
-let sections = ['공통', '요금제', '부가서비스', '기타'];
+// 헤더 아이콘: 얇은 글리프(📌·—·▁)를 또렷한 SVG로 — 핀(항상위) + 접기/펼치기 셰브론 + 최소화 바.
+const PIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+const CHEVRON_UP_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l6-6 6 6"/></svg>';
+const CHEVRON_DOWN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 10l6 6 6-6"/></svg>';
+const MIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 12h12"/></svg>';
+
+let sections = ['공통', '기타'];
 let activeTab = '전체';        // '전체' 또는 섹션명
 let allCards = [];             // 마지막 listCards 결과(탭 필터용)
 let panelCollapsed = false;
 let sectionDeleteMode = false;
 const FALLBACK_SECTION = '공통';
 const FIXED_SECTIONS = new Set([FALLBACK_SECTION]);
+let deleteModeDismiss = null; // 섹션 삭제 모드('-') 바깥 클릭 해제 리스너
+
+function disarmDeleteDismiss() {
+  if (deleteModeDismiss) { document.removeEventListener('pointerdown', deleteModeDismiss, true); deleteModeDismiss = null; }
+}
+// 섹션 삭제 표시 모드 on/off. on이면 탭 영역 밖(빈 공간) 클릭 시 자동 해제.
+function setDeleteMode(on) {
+  sectionDeleteMode = on;
+  refreshTabs();
+  disarmDeleteDismiss();
+  if (on) {
+    deleteModeDismiss = (e) => { if (!e.target.closest('#tabs')) setDeleteMode(false); };
+    setTimeout(() => document.addEventListener('pointerdown', deleteModeDismiss, true), 0);
+  }
+}
 
 // ── 카드 목록 + 섹션 필터 ───────────────────────────────────────────────
 // 검색 중에 패널 갱신(카드 focus·표시상태 변경 등)이 와도 검색 결과를 유지한다.
 // (검색 결과 클릭 → focusCard → notifyPanel → 여기로 들어와 목록으로 덮어쓰던 리셋 버그 방지)
 async function refreshCards() {
   allCards = await window.api.listCards();
+  updateVisToggle();
   const search = document.querySelector('#search');
   const q = search ? search.value.trim() : '';
   if (q) await doSearch(q); else renderCardList();
+}
+
+// 전체 표시/숨김 단일 토글 — 하나라도 보이면 '전체 숨김', 다 숨었으면 '전체 표시'(Ctrl+Alt+H와 동일 동작).
+const EYE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18"/><path d="M10.6 5.1A11 11 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.9 4.6"/><path d="M6.1 6.1A17.6 17.6 0 0 0 2 12s3.5 7 10 7a11 11 0 0 0 4-.8"/></svg>';
+function updateVisToggle() {
+  const btn = $('#toggleAll'); if (!btn) return;
+  const anyVisible = allCards.some((c) => c.visible);
+  btn.innerHTML = anyVisible ? EYE_OFF_SVG + '전체 숨김' : EYE_SVG + '전체 표시';
+  btn.title = anyVisible ? '모든 카드 숨기기' : '모든 카드 표시';
 }
 
 // 화면에 뜨는 집합과 동일한 필터(엄격 격리): 전체=모두, 그 외=해당 섹션만.
@@ -95,7 +127,7 @@ function refreshTabs() {
   remove.className = 'tab modetab' + (sectionDeleteMode ? ' active' : '');
   remove.textContent = '-';
   remove.title = sectionDeleteMode ? '섹션 삭제 표시 끄기' : '섹션 삭제 표시';
-  remove.onclick = () => { sectionDeleteMode = !sectionDeleteMode; refreshTabs(); };
+  remove.onclick = () => setDeleteMode(!sectionDeleteMode);
   el.appendChild(remove);
 }
 
@@ -119,7 +151,7 @@ async function deleteSection(name) {
 
 // Electron은 window.prompt 미지원 → 인라인 입력으로 섹션 추가.
 function startAddTab(el, addBtn) {
-  sectionDeleteMode = false;
+  sectionDeleteMode = false; disarmDeleteDismiss();
   addBtn.style.display = 'none';
   const inp = document.createElement('input');
   inp.className = 'tabadd'; inp.placeholder = '새 섹션'; inp.style.cssText = 'width:72px;font-size:11px;padding:2px 6px;';
@@ -169,7 +201,8 @@ async function refreshStatus() {
   const s = await window.api.status();
   const set = await window.api.getSettings();
   const st = $('#status');
-  st.textContent = (s.keyProtected ? '로컬 암호화 적용(키 보호됨)' : '주의: 키가 보호되지 않음(DPAPI 불가) — 이 PC에서 데이터 보호가 약합니다') + ` · 카드 ${s.cardCount}개`;
+  const protLabel = s.keyMode === 'passphrase' ? '비밀번호 잠금' : '키 보호됨';
+  st.textContent = (s.keyProtected ? `로컬 암호화 적용(${protLabel})` : '주의: 키가 보호되지 않음(DPAPI 불가) — 데이터 보호가 약합니다. 설정에서 비밀번호 잠금을 켜세요') + ` · 카드 ${s.cardCount}개`;
   st.className = s.keyProtected ? 'status' : 'status warn';
   $('#hotkeyHint').textContent = `전체 표시/숨김 단축키: ${set.hotkeyHideAll || '(없음)'}`;
   $('#agentId').value = set.agentId || '';
@@ -189,9 +222,14 @@ async function refreshStatus() {
   } else { note.style.display = 'none'; }
 }
 
+function setPanelFoldIcon() {
+  const f = $('#pFold');
+  if (f) f.innerHTML = panelCollapsed ? CHEVRON_DOWN_SVG : CHEVRON_UP_SVG; // 접힘=펼치기(∨) / 펼침=접기(∧)
+}
 function toggleFold() {
   panelCollapsed = !panelCollapsed;
   document.body.classList.toggle('collapsed', panelCollapsed);
+  setPanelFoldIcon();
   window.api.panelCollapse(panelCollapsed);
 }
 
@@ -237,6 +275,79 @@ function importForm() {
   };
 }
 
+// ── 비밀번호 잠금(SE-9) ──
+function lockMsg(text, ok) {
+  const h = $('#lockHint'); h.textContent = text;
+  h.style.color = ok === false ? '#c0392b' : (ok === true ? '#15803d' : '#9aa1ab');
+}
+async function refreshLock() {
+  const { mode } = await window.api.lockStatus();
+  const body = $('#lockBody'); const form = $('#lockForm');
+  form.innerHTML = ''; body.innerHTML = '';
+  const btns = document.createElement('div'); btns.className = 'btns';
+  if (mode === 'passphrase') {
+    const tag = document.createElement('div'); tag.textContent = '🔒 비밀번호 잠금 사용 중'; tag.style.cssText = 'font-size:12px;color:#15803d;margin-bottom:4px;';
+    body.appendChild(tag);
+    const ch = document.createElement('button'); ch.textContent = '비밀번호 변경'; ch.onclick = lockChangeForm;
+    const off = document.createElement('button'); off.textContent = '잠금 끄기'; off.onclick = lockDisableForm;
+    btns.appendChild(ch); btns.appendChild(off);
+  } else {
+    const on = document.createElement('button'); on.textContent = '비밀번호 잠금 켜기'; on.onclick = lockEnableForm;
+    btns.appendChild(on);
+  }
+  body.appendChild(btns);
+}
+const PIN_ATTR = 'type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"';
+function pinFilter(sel) { const el = $(sel); if (el) el.addEventListener('input', () => { el.value = el.value.replace(/\D/g, '').slice(0, 6); }); } // 숫자 6자리만
+function lockEnableForm() {
+  const f = $('#lockForm');
+  f.innerHTML = `<div class="row"><input ${PIN_ATTR} id="lp1" placeholder="새 비밀번호(숫자 6자리)" /></div>` +
+                `<div class="row"><input ${PIN_ATTR} id="lp2" placeholder="비밀번호 확인" /><button id="lgo">잠금 켜기</button></div>`;
+  pinFilter('#lp1'); pinFilter('#lp2');
+  $('#lgo').onclick = async () => {
+    const p = $('#lp1').value, p2 = $('#lp2').value;
+    if (!/^\d{6}$/.test(p)) return lockMsg('비밀번호는 숫자 6자리여야 합니다.', false);
+    if (p !== p2) return lockMsg('비밀번호가 일치하지 않습니다.', false);
+    if (!window.confirm('비밀번호(숫자 6자리)를 분실하면 데이터를 복구할 수 없습니다.\n먼저 백업을 권장합니다.\n\n잠금을 켤까요?')) return;
+    const r = await window.api.lockEnable(p);
+    f.innerHTML = '';
+    if (r.ok) { lockMsg('비밀번호 잠금을 켰습니다. 다음 실행부터 적용됩니다.', true); refreshLock(); refreshStatus(); }
+    else if (r.reason === 'weak') lockMsg('비밀번호는 숫자 6자리여야 합니다.', false);
+    else lockMsg('잠금 설정에 실패했습니다.', false);
+  };
+}
+function lockChangeForm() {
+  const f = $('#lockForm');
+  f.innerHTML = `<div class="row"><input ${PIN_ATTR} id="lpo" placeholder="현재 비밀번호" /></div>` +
+                `<div class="row"><input ${PIN_ATTR} id="lpn" placeholder="새 비밀번호(숫자 6자리)" /></div>` +
+                `<div class="row"><button id="lgo">변경</button></div>`;
+  pinFilter('#lpo'); pinFilter('#lpn');
+  $('#lgo').onclick = async () => {
+    const o = $('#lpo').value, n = $('#lpn').value;
+    if (!/^\d{6}$/.test(n)) return lockMsg('새 비밀번호는 숫자 6자리여야 합니다.', false);
+    const r = await window.api.lockChange(o, n);
+    f.innerHTML = '';
+    if (r.ok) lockMsg('비밀번호를 변경했습니다.', true);
+    else if (r.reason === 'weak') lockMsg('새 비밀번호는 숫자 6자리여야 합니다.', false);
+    else if (r.reason === 'badold') lockMsg('현재 비밀번호가 올바르지 않습니다.', false);
+    else lockMsg('변경에 실패했습니다.', false);
+  };
+}
+function lockDisableForm() {
+  const f = $('#lockForm');
+  f.innerHTML = `<div class="row"><input ${PIN_ATTR} id="lpd" placeholder="현재 비밀번호" /><button id="lgo">잠금 끄기</button></div>`;
+  pinFilter('#lpd');
+  $('#lgo').onclick = async () => {
+    const p = $('#lpd').value;
+    if (!p) return lockMsg('현재 비밀번호를 입력하세요.', false);
+    const r = await window.api.lockDisable(p);
+    f.innerHTML = '';
+    if (r.ok) { lockMsg(r.protected ? '잠금을 끄고 DPAPI 보호로 전환했습니다.' : '잠금을 껐습니다. 주의: 이 PC는 DPAPI 불가로 키 보호가 약합니다.', r.protected === true); refreshLock(); refreshStatus(); }
+    else if (r.reason === 'badpass') lockMsg('비밀번호가 올바르지 않습니다.', false);
+    else lockMsg('잠금 해제에 실패했습니다.', false);
+  };
+}
+
 function wire() {
   document.querySelectorAll('[data-type]').forEach((b) => {
     // 새 카드는 현재 탭 섹션에 생성(전체 탭이면 공통). 그래야 섹션 탭이 실제로 의미를 가짐.
@@ -246,8 +357,11 @@ function wire() {
       await refreshCards(); await refreshStatus();
     };
   });
-  $('#showAll').onclick = async () => { activeTab = '전체'; refreshTabs(); await window.api.showAll(); refreshCards(); }; // 전체 표시는 전체 탭으로(목록/화면 일치)
-  $('#hideAll').onclick = async () => { await window.api.hideAll(); refreshCards(); };
+  $('#toggleAll').onclick = async () => {
+    if (allCards.some((c) => c.visible)) { await window.api.hideAll(); }
+    else { activeTab = '전체'; refreshTabs(); await window.api.showAll(); } // 전체 표시는 전체 탭으로(목록/화면 일치)
+    await refreshCards();
+  };
 
   $('#savePreset').onclick = async () => {
     const name = $('#presetName').value.trim();
@@ -280,6 +394,10 @@ function wire() {
   phead.addEventListener('dblclick', (e) => { if (e.target.closest('.pbtn')) return; toggleFold(); });
   $('#pMin').onclick = () => window.api.panelMinimize();
   $('#pClose').onclick = () => window.api.panelClose();
+  // 헤더 아이콘 주입(핀/최소화/접기) — 얇은 글리프 대신 또렷한 SVG
+  $('#pPin').innerHTML = PIN_SVG;
+  $('#pMin').innerHTML = MIN_SVG;
+  setPanelFoldIcon();
 
   // 헤더 수동 드래그(카드와 동일): pointer capture + 4px 임계값으로 더블클릭(접기)과 분리.
   let pdrag = null;
@@ -330,4 +448,5 @@ function wire() {
   await refreshCards();
   await refreshPresets();
   await refreshStatus();
+  await refreshLock();
 })();

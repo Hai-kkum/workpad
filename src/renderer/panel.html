@@ -10,9 +10,9 @@
   <div class="head" id="phead">
     <span class="brand"><img src="../../assets/brand/workpad-mark.svg" alt="" /><span class="logo">Workpad</span></span><span class="ver">v0.2.1</span>
     <span class="hspace"></span>
-    <button class="pbtn" id="pPin" title="항상 위">📌</button>
-    <button class="pbtn" id="pFold" title="접기/펼치기 (헤더 더블클릭)">—</button>
-    <button class="pbtn" id="pMin" title="최소화">▁</button>
+    <button class="pbtn" id="pPin" title="항상 위 (다른 창 위에 고정)"></button>
+    <button class="pbtn" id="pFold" title="접기/펼치기 (헤더 더블클릭)"></button>
+    <button class="pbtn" id="pMin" title="최소화 (작업표시줄로)"></button>
     <button class="pbtn" id="pClose" title="닫기(종료)">✕</button>
   </div>
 
@@ -24,8 +24,7 @@
       <div class="sechead">
         <span class="lbl">카드</span>
         <span class="mini">
-          <button id="showAll">표시</button>
-          <button id="hideAll">숨김</button>
+          <button id="toggleAll" class="vistoggle">전체 표시/숨김</button>
         </span>
       </div>
       <div class="btns add">
@@ -33,7 +32,6 @@
         <button data-type="callmemo">+ 기록 메모</button>
         <button data-type="memo">+ 메모</button>
         <button data-type="table">+ 표</button>
-        <button data-type="todo">+ 할일</button>
       </div>
       <div class="tabs" id="tabs"></div>
       <div class="cards" id="cards"></div>
@@ -67,6 +65,13 @@
         </div>
         <div id="xferForm"></div>
         <div class="hint" id="xferHint">암호로 백업해 새 PC에서 복원합니다.</div>
+      </div>
+
+      <div class="sub" id="lockSec">
+        <div class="lbl2">비밀번호 잠금 (SE-9)</div>
+        <div id="lockBody"></div>
+        <div id="lockForm"></div>
+        <div class="hint" id="lockHint">앱을 열 때 비밀번호로 잠급니다. 분실하면 데이터를 복구할 수 없으니 먼저 백업하세요.</div>
       </div>
     </div>
 

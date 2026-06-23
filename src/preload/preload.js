@@ -20,6 +20,13 @@ contextBridge.exposeInMainWorld('api', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
   status: () => ipcRenderer.invoke('app:status'),
+  // 비밀번호 잠금(SE-9)
+  unlockTry: (pass) => ipcRenderer.invoke('unlock:try', pass),
+  unlockQuit: () => ipcRenderer.invoke('unlock:quit'),
+  lockStatus: () => ipcRenderer.invoke('lock:status'),
+  lockEnable: (pass) => ipcRenderer.invoke('lock:enable', pass),
+  lockChange: (oldPass, newPass) => ipcRenderer.invoke('lock:change', oldPass, newPass),
+  lockDisable: (pass) => ipcRenderer.invoke('lock:disable', pass),
   getEnv: () => ipcRenderer.invoke('env:get'),
   exportData: (pass) => ipcRenderer.invoke('data:export', pass),
   importData: (pass) => ipcRenderer.invoke('data:import', pass),

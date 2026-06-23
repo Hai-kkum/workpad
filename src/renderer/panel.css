@@ -16,13 +16,12 @@ body {
 .hspace { flex: 1; }
 .pbtn {
   border: 0; background: transparent; color: #6b7280;
+  display: inline-flex; align-items: center; justify-content: center;
   font-size: 12px; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; line-height: 1; padding: 0;
 }
 .pbtn:hover { background: #e5e7eb; color: #111; }
-.pbtn.active { background: #fdecea; }
-/* 항상 위 핀(📌은 이모지라 color 무시) — 끄면 회색(grayscale), 켜면 원래 빨강 */
-#pPin { filter: grayscale(1); opacity: .5; }
-#pPin.active { filter: none; opacity: 1; }
+/* 항상 위 ON = 파랑(카드 핀과 통일). 헤더 아이콘은 SVG라 currentColor로 색 적용됨 */
+.pbtn.active { color: #2563eb; background: #dbeafe; }
 .content { padding: 0 12px 12px; height: calc(100vh - 34px); box-sizing: border-box; overflow-y: auto; }
 body.collapsed .content { display: none; }
 
@@ -48,23 +47,29 @@ body.collapsed .content { display: none; }
 .cardrow:hover .sectsel { color: #374151; border-color: #d7dbe0; }
 
 .sec { padding: 8px 0; border-top: 1px solid #f0f1f3; }
-.lbl { font-size: 11px; font-weight: 500; color: #6b7280; margin-bottom: 6px; }
+.lbl { font-size: 11px; font-weight: 600; color: #374151; letter-spacing: .01em; margin-bottom: 6px; }
 
 /* 카드 섹션 머리(라벨 + 우측 미니 표시/숨김) */
 .sechead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
 .sechead .lbl { margin-bottom: 0; }
 .mini { display: flex; gap: 4px; }
 .mini button { font-size: 11px; padding: 2px 8px; color: #6b7280; border-color: #e7e9ec; }
+.mini .vistoggle { display: inline-flex; align-items: center; gap: 4px; }
+.mini .vistoggle svg { width: 12px; height: 12px; flex: 0 0 auto; }
 .btns.add { margin-bottom: 8px; }
+/* 카드 추가 = 패널의 주 동작 → 약간의 강조(주 버튼) */
+.btns.add button { font-weight: 500; }
+.btns.add button:hover { border-color: #2563eb; color: #1d4ed8; background: #f5f8ff; }
 
-/* 설정 · 백업 접기(기본 닫힘) */
-.disc { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
-.disc:hover .lbl { color: #374151; }
-.disc .arr { color: #9aa1ab; font-size: 11px; transition: transform .15s; }
+/* 설정 · 백업 접기(기본 닫힘) — 클릭 가능한 헤더로 명확히(C) */
+.disc { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; padding: 9px 12px; margin: 0 -12px; border-radius: 6px; }
+.disc:hover { background: #f3f4f6; }
+.disc .lbl { margin-bottom: 0; color: #374151; }
+.disc .arr { color: #6b7280; font-size: 13px; transition: transform .15s; }
 .disc.open .arr { transform: rotate(180deg); }
 .sub { padding: 2px 0 6px; }
 .sub + .sub { border-top: 1px solid #f0f1f3; padding-top: 8px; margin-top: 4px; }
-.lbl2 { font-size: 11px; font-weight: 500; color: #6b7280; margin-bottom: 6px; }
+.lbl2 { font-size: 11px; font-weight: 600; color: #374151; letter-spacing: .01em; margin-bottom: 6px; }
 
 .btns { display: flex; gap: 6px; flex-wrap: wrap; }
 button {

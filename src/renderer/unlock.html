@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { font-family: 'Malgun Gothic', system-ui, sans-serif; background: #fff; color: #1c2330;
+           display: flex; flex-direction: column; user-select: none; }
+    .bar { height: 30px; -webkit-app-region: drag; display: flex; align-items: center; padding: 0 12px;
+           font-size: 12px; color: #6b7280; }
+    .bar img { width: 14px; height: 14px; margin-right: 6px; }
+    .wrap { flex: 1; padding: 4px 22px 18px; display: flex; flex-direction: column; gap: 9px; }
+    h1 { font-size: 15px; margin: 2px 0; }
+    .sub { font-size: 12px; color: #6b7280; margin: 0; line-height: 1.4; }
+    input { -webkit-app-region: no-drag; padding: 9px 10px; font-size: 13px; border: 1px solid #cdd3dd;
+            border-radius: 7px; outline: none; }
+    input:focus { border-color: #3b82f6; }
+    .err { font-size: 12px; color: #c0392b; min-height: 15px; }
+    .btns { display: flex; gap: 8px; justify-content: flex-end; -webkit-app-region: no-drag; }
+    button { padding: 8px 14px; font-size: 13px; border: 1px solid #cdd3dd; background: #f6f8fb;
+             border-radius: 7px; cursor: pointer; }
+    button#go { background: #2563eb; color: #fff; border-color: #2563eb; }
+    button:disabled { opacity: .5; cursor: default; }
+  </style>
+</head>
+<body>
+  <div class="bar"><img src="../../assets/brand/workpad-mark.svg" alt="" />Workpad</div>
+  <div class="wrap">
+    <h1>🔒 잠금 해제</h1>
+    <p class="sub">이 PC의 워크패드 데이터가 비밀번호로 잠겨 있습니다.</p>
+    <input type="password" id="pass" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="비밀번호 (숫자 6자리)" autocomplete="off" />
+    <div class="err" id="err"></div>
+    <div class="btns">
+      <button id="quit" type="button">종료</button>
+      <button id="go" type="button">잠금 해제</button>
+    </div>
+  </div>
+  <script src="unlock.js"></script>
+</body>
+</html>
