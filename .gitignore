@@ -4,3 +4,6 @@ out/
 *.log
 .DS_Store
 Thumbs.db
+
+# bkit 플러그인 로컬 런타임(세션·토큰 상태) — 커밋 금지
+.bkit/
