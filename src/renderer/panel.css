@@ -105,6 +105,7 @@ input:focus { border-color: #2563eb; }
 }
 .cardrow:hover { background: #f3f4f6; }
 .badge { flex: 0 0 auto; font-size: 10px; padding: 1px 6px; border-radius: 999px; color: #374151; background: #eef0f3; }
+.badge.note { background: #e0edff; color: #1d4ed8; }
 .badge.snippet { background: #e0edff; color: #1d4ed8; }
 .badge.callmemo { background: #ffe9e0; color: #c2410c; }
 .badge.memo { background: #e7f5ec; color: #15803d; }
@@ -121,6 +122,12 @@ input:focus { border-color: #2563eb; }
 .presets { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
 .preset { font-size: 12px; padding: 3px 9px; border: 1px solid #d7dbe0; border-radius: 999px; cursor: pointer; }
 .preset:hover { background: #f3f4f6; }
+
+/* 말머리 칩(복사 서식 {말머리} 후보) */
+.hdrs { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+.hdrchip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 3px 5px 3px 9px; border: 1px solid #d7dbe0; border-radius: 999px; }
+.hdrdel { border: none; background: none; cursor: pointer; color: #9aa1ab; font-size: 11px; line-height: 1; padding: 0 2px; }
+.hdrdel:hover { color: #c0392b; }
 
 .hint { font-size: 11px; color: #9aa1ab; margin-top: 6px; }
 .status { font-size: 11px; color: #6b7280; padding-top: 10px; border-top: 1px solid #f0f1f3; margin-top: 8px; }

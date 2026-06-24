@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   // 설정 / 상태
   getSettings: () => ipcRenderer.invoke('settings:get'),
   updateSettings: (patch) => ipcRenderer.invoke('settings:update', patch),
+  onSettingsChanged: (cb) => ipcRenderer.on('settings:changed', (_e, s) => cb(s)), // 카드: 설정 변경 시 캐시 갱신(사용자ID·마스킹)
   status: () => ipcRenderer.invoke('app:status'),
   // 비밀번호 잠금(SE-9)
   unlockTry: (pass) => ipcRenderer.invoke('unlock:try', pass),

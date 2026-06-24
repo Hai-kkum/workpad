@@ -28,8 +28,7 @@
         </span>
       </div>
       <div class="btns add">
-        <button data-type="snippet">+ 상용구</button>
-        <button data-type="callmemo">+ 기록 메모</button>
+        <button data-type="note">+ 노트</button>
         <button data-type="memo">+ 메모</button>
         <button data-type="table">+ 표</button>
       </div>
@@ -52,7 +51,9 @@
     </div>
     <div id="moreBody" hidden>
       <div class="sub">
-        <div class="row"><label class="fld">사용자ID</label><input id="agentId" placeholder="예: 홍길동" /></div>
+        <div class="row"><label class="fld">사용자ID</label><input id="agentId" placeholder="예: 홍길동" /><button id="agentIdSave">적용</button></div>
+        <div class="row"><label class="fld">말머리</label><input id="hdrInput" placeholder="머리말 추가 (예: 상담)" /><button id="hdrAdd">추가</button></div>
+        <div class="hdrs" id="hdrList"></div>
         <div class="row"><label class="chk"><input type="checkbox" id="maskPII" /> 개인정보 가리기 (복사는 원문)</label></div>
         <div class="hint" id="hotkeyHint"></div>
       </div>

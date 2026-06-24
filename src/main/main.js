@@ -3,7 +3,7 @@
 // 카드 = 프레임 없는 독립 BrowserWindow. Alt-Tab/작업표시줄 숨김은 숨은 "소유 창(owner)"의
 // 자식(parent)으로 만들어 처리(Windows에서 소유된 창은 Alt-Tab 목록에 안 나옴) — 네이티브 코드 불필요.
 
-const { app, BrowserWindow, ipcMain, clipboard, globalShortcut, Menu, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, clipboard, globalShortcut, Menu, dialog, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -123,18 +123,10 @@ function defaultCard(type, section) {
     id: newId(), type, alwaysOnTop: false, collapsed: false, visible: true,
     section: section || '공통', // 생성 시점의 탭 섹션(없으면 공통)
     createdAt: Date.now(), updatedAt: Date.now(),
-    format: { enabled: false, template: '[{날짜단축} {시간}] {내용}' },
+    format: { enabled: false, template: '[{날짜단축} {시간}] ' }, // 접두만 — {내용}은 복사 시 자동으로 뒤에
   };
   if (type === 'memo') {
     return { ...base, title: '메모', bounds: { x, y, width: 260, height: 200 }, content: { text: '' } };
-  }
-  if (type === 'callmemo') {
-    return {
-      ...base, title: '기록 메모', ttlDays: 30, timeDisplay: 'datetime',
-      bounds: { x, y, width: 300, height: 260 },
-      format: { enabled: true, template: '[{날짜단축} {시간}] {내용}' }, // 복사도 날짜+시간(화면 기본과 일치)
-      lines: [],
-    };
   }
   if (type === 'table') {
     return { ...base, title: '표', bounds: { x, y, width: 320, height: 240 }, rows: [['항목', '값'], ['', '']] };
@@ -142,21 +134,49 @@ function defaultCard(type, section) {
   if (type === 'todo') {
     return { ...base, title: '할일', bounds: { x, y, width: 260, height: 220 }, lines: [] };
   }
+  // 기본 = 노트(상용구·기록 메모 통합): 줄 누적 + 줄 클릭 복사. 화면 말머리/시각 기준/자동 삭제는 옵션(기본: 끔/복사시점/안 함).
   return {
-    ...base, title: '상용구', bounds: { x, y, width: 280, height: 220 },
+    ...base, title: '노트', timeDisplay: 'off', ttlDays: 0,
+    bounds: { x, y, width: 280, height: 220 },
+    format: { enabled: false, template: '[{날짜단축} {시간}] ', timeBasis: 'now' }, // 접두만 — {내용}은 복사 시 자동으로 뒤에
     lines: [{ text: '본인 확인 감사합니다. 바로 확인해 드리겠습니다.' }, { text: '추가로 궁금하신 점은 없으실까요?' }],
   };
 }
 
+// 저장된 카드 위치가 현재 연결된 모니터 밖이면(듀얼→단일 전환 등) 보이는 화면 안으로 당겨온다.
+// 작업영역과 충분히 겹치면(타이틀바를 잡을 만큼) 그대로 두고, 전혀 안 겹치면 가장 가까운 디스플레이로 클램프.
+function clampToVisible(bounds) {
+  try {
+    const b = { x: Math.round(bounds.x), y: Math.round(bounds.y), width: bounds.width, height: bounds.height };
+    const MARGIN = 80; // 최소 이만큼은 화면 안에 보여야 "잡을 수 있다"고 인정
+    const overlaps = (wa) => {
+      const ix = Math.max(b.x, wa.x), iy = Math.max(b.y, wa.y);
+      const ax = Math.min(b.x + b.width, wa.x + wa.width), ay = Math.min(b.y + b.height, wa.y + wa.height);
+      return (ax - ix) >= Math.min(MARGIN, b.width) && (ay - iy) >= Math.min(MARGIN, b.height);
+    };
+    if (screen.getAllDisplays().some((d) => overlaps(d.workArea))) return b;
+    // 안 보임: 창 중심에서 가장 가까운 디스플레이의 작업영역 안으로 이동.
+    const d = screen.getDisplayNearestPoint({ x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) }) || screen.getPrimaryDisplay();
+    const wa = d.workArea;
+    const w = Math.min(b.width, wa.width), h = Math.min(b.height, wa.height);
+    return {
+      x: Math.round(Math.min(Math.max(b.x, wa.x), wa.x + wa.width - w)),
+      y: Math.round(Math.min(Math.max(b.y, wa.y), wa.y + wa.height - h)),
+      width: w, height: h,
+    };
+  } catch (_) { return bounds; }
+}
+
 function createCardWindow(card, show) {
   const collapsed = !!card.collapsed;
+  const vb = clampToVisible(card.bounds); // 화면 밖이면 보이는 모니터 안으로(item 3)
   // 카드 전용 숨은 owner: Alt-Tab/작업표시줄 숨김은 유지하되, 각 카드가 독립 z-order 그룹이라 클릭 시 그 카드만 앞으로 옴.
   const owner = new BrowserWindow({ width: 1, height: 1, show: false, skipTaskbar: true, focusable: false });
   cardOwners.set(card.id, owner);
   const win = new BrowserWindow({
-    x: card.bounds.x, y: card.bounds.y,
-    width: card.bounds.width,
-    height: collapsed ? COLLAPSED_H : card.bounds.height,
+    x: vb.x, y: vb.y,
+    width: vb.width,
+    height: collapsed ? COLLAPSED_H : vb.height,
     minWidth: 160, minHeight: COLLAPSED_H,
     frame: false, skipTaskbar: true, parent: owner,
     alwaysOnTop: !!card.alwaysOnTop, show: false,
@@ -195,6 +215,12 @@ function createCardWindow(card, show) {
 
 // 패널 밖(카드 ✕·전역 단축키·섹션 전환)에서 표시상태가 바뀌면 패널 목록을 다시 그리도록 알림(동기화).
 function notifyPanel() { if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('panel:refresh'); }
+// 설정(사용자ID·개인정보 가리기 등) 변경을 이미 열려 있는 모든 카드 창에 즉시 전파 — 카드가 init 때 캐싱한
+// settings가 낡아 복사 서식에 옛 사용자ID가 박히던 문제 방지(item 1).
+function notifyCardsSettings() {
+  const s = store.getSettings();
+  for (const [, win] of cards) { if (!win.isDestroyed()) win.webContents.send('settings:changed', s); }
+}
 
 // 종료 시 모든 카드 창의 현재 크기·위치를 즉시 저장 — 리사이즈 디바운스(250ms)가 못 따라잡고 앱이 닫혀 크기가 안 남는 문제 방지.
 function saveAllBounds() {
@@ -307,6 +333,7 @@ function registerIpc() {
   ipcMain.handle('settings:update', (_e, patch) => {
     const s = store.updateSettings(patch);
     if (Object.prototype.hasOwnProperty.call(patch, 'hotkeyHideAll')) applyHotkey(s.hotkeyHideAll);
+    notifyCardsSettings(); // 변경된 설정을 열린 카드에 즉시 반영(사용자ID·마스킹)
     return s;
   });
   ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), keyMode: store.getKeyMode(), cardCount: cards.size, loadError: store.getLoadError(), allowDataTransfer: appConfig.allowDataTransfer !== false }));
@@ -406,7 +433,7 @@ function registerIpc() {
   ipcMain.handle('panel:getState', () => ({ alwaysOnTop: !!store.getSettings().panelAlwaysOnTop }));
   ipcMain.handle('panel:listCards', () => store.listCards());
   ipcMain.handle('panel:createCard', (_e, type, section) => {
-    const card = defaultCard(['memo', 'callmemo', 'table', 'todo'].includes(type) ? type : 'snippet', section);
+    const card = defaultCard(['memo', 'table', 'todo', 'note'].includes(type) ? type : 'note', section);
     store.addCard(card);
     const win = createCardWindow(card, true);
     win.once('show', () => { try { win.focus(); } catch (_) {} }); // 새로 만든 카드는 바로 포커스 → 생성 직후 붙여넣기/입력 즉시 가능
@@ -453,7 +480,9 @@ function registerIpc() {
       const win = cards.get(id);
       if (!win || win.isDestroyed()) continue;
       // 접힌 창은 높이를 건드리지 않고 위치/너비만(렌더러 접힘 상태와 desync 방지). store엔 펼침 bounds 보존.
-      const target = win._collapsed ? { x: conf.bounds.x, y: conf.bounds.y, width: conf.bounds.width } : conf.bounds;
+      // 프리셋이 사라진 모니터 좌표를 담고 있어도 보이는 화면 안으로 클램프(item 3).
+      const safe = clampToVisible(conf.bounds);
+      const target = win._collapsed ? { x: safe.x, y: safe.y, width: safe.width } : safe;
       win.setBounds(target);
       store.updateBounds(id, conf.bounds);
       if (conf.visible) { win.show(); store.setVisible(id, true); } else { win.hide(); store.setVisible(id, false); }
@@ -471,7 +500,7 @@ function boot() {
   const saved = Object.values(store.getState().cards);
   logf('restoring cards: ' + saved.length);
   if (saved.length === 0) {
-    const sample = defaultCard('snippet');
+    const sample = defaultCard('note');
     store.addCard(sample);
     createCardWindow(sample, true);
   } else {

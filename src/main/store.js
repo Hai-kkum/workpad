@@ -24,7 +24,7 @@ let lastLoadError = null;  // 복호 실패로 백업·초기화됐는지(B-11)
 function defaultState() {
   return {
     version: 1,
-    settings: { agentId: '', hotkeyHideAll: 'Control+Alt+H', maskPII: true, sections: ['공통', '기타'], panelAlwaysOnTop: false },
+    settings: { agentId: '', hotkeyHideAll: 'Control+Alt+H', maskPII: true, sections: ['공통', '기타'], panelAlwaysOnTop: false, headers: [] },
     cards: {},      // id -> card
     presets: {},    // name -> { [cardId]: {bounds, visible} }
   };
@@ -144,12 +144,40 @@ function decrypt(buf) {
   return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
 }
 
-// TTL 경과한 콜 메모 줄 파기
+// 상용구(snippet)·기록 메모(callmemo)를 통합 카드 '노트'(note)로 1회 마이그레이션. 동작 보존(화면 표시·복사 결과 동일):
+//  - snippet → note: 화면 말머리 끔, 자동삭제 없음, 시각 기준은 기존 fmtBasis 유지(없으면 복사시점 now).
+//  - callmemo → note: 화면 말머리 기존값(없으면 날짜+시간), 자동삭제 기존값(없으면 30일), 시각 기준 줄 작성시각(lineTime — 기존 동작).
+// idempotent: 이미 note면 건드리지 않음(타입이 snippet/callmemo가 아니므로).
+function migrateCardTypes(s) {
+  for (const id of Object.keys((s && s.cards) || {})) {
+    const c = s.cards[id];
+    if (!c) continue;
+    if (c.type === 'snippet') {
+      c.type = 'note';
+      if (c.timeDisplay == null) c.timeDisplay = 'off';
+      if (c.ttlDays == null) c.ttlDays = 0;
+      c.format = c.format || {};
+      if (c.format.timeBasis == null) c.format.timeBasis = 'now'; // 기존 fmtBasis 있으면 유지(now/callStart)
+    } else if (c.type === 'callmemo') {
+      c.type = 'note';
+      if (c.timeDisplay == null) c.timeDisplay = 'datetime';
+      if (c.ttlDays == null) c.ttlDays = 30;
+      c.format = c.format || {};
+      if (c.format.timeBasis == null) c.format.timeBasis = 'lineTime'; // 기존엔 항상 줄 시각 사용 → 동작 보존
+    }
+    // 노트 복사 서식은 '내용 앞 접두'만 보관 — {내용} 토큰 및 그 뒤를 잘라 접두만 남긴다(복사 시 내용은 자동으로 뒤에 붙음). idempotent.
+    if (c.type === 'note' && c.format && typeof c.format.template === 'string' && c.format.template.includes('{내용}')) {
+      c.format.template = c.format.template.split('{내용}')[0];
+    }
+  }
+}
+
+// TTL 경과한 노트(구 콜 메모) 줄 파기
 function purgeExpired(s) {
   const now = Date.now();
   for (const id of Object.keys(s.cards)) {
     const c = s.cards[id];
-    if (c.type === 'callmemo' && c.ttlDays > 0 && Array.isArray(c.lines)) {
+    if ((c.type === 'note' || c.type === 'callmemo') && c.ttlDays > 0 && Array.isArray(c.lines)) {
       const cutoff = now - c.ttlDays * 86400000;
       // fail-closed: 타임스탬프 없는 줄은 카드 생성시각으로 폴백(그것도 없으면 만료 처리) → TTL 우회 차단
       c.lines = c.lines.filter((ln) => (ln.t || c.createdAt || 0) >= cutoff);
@@ -169,6 +197,7 @@ function loadData() {
   }
   state = Object.assign(defaultState(), state);                                  // 누락 필드 보정
   state.settings = Object.assign(defaultState().settings, state.settings || {}); // 설정 누락 키 보정(maskPII 등)
+  migrateCardTypes(state); // 상용구·기록 메모 → 노트 통합(동작 보존)
   purgeExpired(state);
   scheduleSave();
   return state;
@@ -261,6 +290,7 @@ const api = {
     if (!next.cards || typeof next.cards !== 'object') next.cards = {};
     if (!next.presets || typeof next.presets !== 'object') next.presets = {};
     state = next;
+    migrateCardTypes(state); // 옛 백업(상용구·기록 메모)도 노트로 통합
     purgeExpired(state);
     flush();
     return state;

@@ -4,7 +4,7 @@
 const $ = (s) => document.querySelector(s);
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const escapeHtml = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-const typeLabel = (t) => ({ snippet: '상용구', callmemo: '기록', memo: '메모', table: '표', todo: '할일' }[t] || t);
+const typeLabel = (t) => ({ note: '노트', snippet: '상용구', callmemo: '기록', memo: '메모', table: '표', todo: '할일' }[t] || t);
 
 // 헤더 아이콘: 얇은 글리프(📌·—·▁)를 또렷한 SVG로 — 핀(항상위) + 접기/펼치기 셰브론 + 최소화 바.
 const PIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
@@ -197,6 +197,35 @@ async function refreshPresets() {
   }
 }
 
+// 말머리 목록 — 복사 서식 {말머리} 토큰의 값 후보. 여기서 등록/삭제하면 노트 서식 드롭다운에서 선택할 수 있다.
+async function refreshHeaders() {
+  const set = await window.api.getSettings();
+  const headers = Array.isArray(set.headers) ? set.headers : [];
+  const el = $('#hdrList');
+  if (!el) return;
+  el.innerHTML = '';
+  for (const h of headers) {
+    const chip = document.createElement('span');
+    chip.className = 'hdrchip'; chip.textContent = h;
+    const del = document.createElement('button');
+    del.className = 'hdrdel'; del.type = 'button'; del.textContent = '✕'; del.title = '삭제';
+    del.onclick = async () => { await window.api.updateSettings({ headers: headers.filter((x) => x !== h) }); refreshHeaders(); };
+    chip.appendChild(del);
+    el.appendChild(chip);
+  }
+}
+
+// 사용자ID 확정: 직전 적용값과 같으면 무시(중복 저장·blur/click 이중발화 방지), 다르면 저장 후 '적용됨' 피드백.
+let agentIdSaved = '';
+async function commitAgentId() {
+  const v = ($('#agentId').value || '').trim();
+  if (v === agentIdSaved) return;
+  agentIdSaved = v;
+  await window.api.updateSettings({ agentId: v });
+  const btn = $('#agentIdSave');
+  if (btn) { const t = btn.textContent; btn.textContent = '적용됨 ✓'; btn.disabled = true; setTimeout(() => { btn.textContent = t; btn.disabled = false; }, 1200); }
+}
+
 async function refreshStatus() {
   const s = await window.api.status();
   const set = await window.api.getSettings();
@@ -206,6 +235,7 @@ async function refreshStatus() {
   st.className = s.keyProtected ? 'status' : 'status warn';
   $('#hotkeyHint').textContent = `전체 표시/숨김 단축키: ${set.hotkeyHideAll || '(없음)'}`;
   $('#agentId').value = set.agentId || '';
+  agentIdSaved = set.agentId || ''; // 동기화: 포커스아웃 시 변경 없으면 재저장 안 함
   $('#maskPII').checked = set.maskPII !== false;
   // 데이터 이전 기능 게이팅(보안팀 배포 설정)
   if (s.allowDataTransfer === false) {
@@ -320,11 +350,12 @@ function lockChangeForm() {
   const f = $('#lockForm');
   f.innerHTML = `<div class="row"><input ${PIN_ATTR} id="lpo" placeholder="현재 비밀번호" /></div>` +
                 `<div class="row"><input ${PIN_ATTR} id="lpn" placeholder="새 비밀번호(숫자 6자리)" /></div>` +
-                `<div class="row"><button id="lgo">변경</button></div>`;
-  pinFilter('#lpo'); pinFilter('#lpn');
+                `<div class="row"><input ${PIN_ATTR} id="lpn2" placeholder="새 비밀번호 확인" /><button id="lgo">변경</button></div>`;
+  pinFilter('#lpo'); pinFilter('#lpn'); pinFilter('#lpn2');
   $('#lgo').onclick = async () => {
-    const o = $('#lpo').value, n = $('#lpn').value;
+    const o = $('#lpo').value, n = $('#lpn').value, n2 = $('#lpn2').value;
     if (!/^\d{6}$/.test(n)) return lockMsg('새 비밀번호는 숫자 6자리여야 합니다.', false);
+    if (n !== n2) return lockMsg('새 비밀번호가 일치하지 않습니다.', false); // 오타로 복구불가 PIN 설정 방지
     const r = await window.api.lockChange(o, n);
     f.innerHTML = '';
     if (r.ok) lockMsg('비밀번호를 변경했습니다.', true);
@@ -371,7 +402,22 @@ function wire() {
     refreshPresets();
   };
 
-  $('#agentId').addEventListener('input', debounce((e) => window.api.updateSettings({ agentId: e.target.value }), 400));
+  // 사용자ID: 입력 즉시가 아니라 '적용'(또는 Enter/포커스 아웃)으로 명확히 확정 → 열린 카드 복사 서식에도 즉시 반영.
+  const agentIdEl = $('#agentId');
+  agentIdEl.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); commitAgentId(); } };
+  agentIdEl.addEventListener('blur', commitAgentId);
+  $('#agentIdSave').onclick = commitAgentId;
+  // 말머리 추가(Enter 또는 추가 버튼). 중복은 무시.
+  const addHeader = async () => {
+    const inp = $('#hdrInput'); const v = (inp.value || '').trim();
+    if (!v) return;
+    const set = await window.api.getSettings();
+    const headers = Array.isArray(set.headers) ? set.headers : [];
+    if (!headers.includes(v)) await window.api.updateSettings({ headers: headers.concat([v]) });
+    inp.value = ''; refreshHeaders();
+  };
+  $('#hdrAdd').onclick = addHeader;
+  $('#hdrInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addHeader(); } });
   $('#maskPII').addEventListener('change', (e) => window.api.updateSettings({ maskPII: e.target.checked }));
 
   const search = $('#search');
@@ -447,6 +493,7 @@ function wire() {
   refreshTabs();
   await refreshCards();
   await refreshPresets();
+  await refreshHeaders();
   await refreshStatus();
   await refreshLock();
 })();

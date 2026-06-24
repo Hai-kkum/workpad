@@ -29,22 +29,31 @@ function fmtLineTime(t) {
   return (card.timeDisplay === 'time') ? time : `${date} ${time}`;
 }
 
-// when: 이 줄의 기준 시각(콜메모는 line.t — 줄이 적힌 실제 시각). 없으면 시각기준(통화시작/복사시점) 폴백(상용구).
-function applyStamp(text, fmt, raw, when) {
+// 복사 스탬프에 들어갈 시각 결정 — 시각 기준(fmt.timeBasis): now=복사 시점 / lineTime=줄 작성시각(line.t) / callStart=통화 시작(card.createdAt).
+function stampTime(fmt, lineT) {
+  const basis = (fmt && fmt.timeBasis) || 'now';
+  if (basis === 'lineTime') return lineT != null ? lineT : ((card && card.createdAt) || Date.now());
+  if (basis === 'callStart') return (card && card.createdAt) || Date.now();
+  return Date.now(); // now = 복사하는 순간
+}
+function applyStamp(text, fmt, raw, lineT) {
   if (raw || !fmt || !fmt.enabled) return text;
-  const base = when != null ? when : ((fmt.timeBasis === 'callStart' && card && card.createdAt) ? card.createdAt : Date.now());
-  const d = new Date(base);
+  const d = new Date(stampTime(fmt, lineT));
   const map = {
     '{날짜}': `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
     '{날짜단축}': `${pad(d.getMonth() + 1)}/${pad(d.getDate())}`,
     '{시간}': `${pad(d.getHours())}:${pad(d.getMinutes())}`,
     '{사용자ID}': fmt.agentId || settings.agentId || '',
     '{상담사ID}': fmt.agentId || settings.agentId || '', // 옛 서식 호환(기존 카드의 {상담사ID}도 계속 치환)
-    '{내용}': text,
+    '{말머리}': fmt.header || '', // 패널에 등록해 둔 말머리(머리말) 중 이 노트가 고른 값
   };
-  let s = fmt.template || '{내용}';
+  // 복사 서식(template)은 '내용 앞 접두'만 보관 — {내용}은 항상 맨 뒤에 자동으로 붙인다(사용자가 위치·누락을 건드리지 못하게).
+  let s = fmt.template || '';
   for (const k of Object.keys(map)) s = s.split(k).join(map[k]);
-  return s;
+  if (s.includes('{내용}')) return s.split('{내용}').join(text); // 옛 템플릿에 {내용} 남아 있으면 그 자리(하위호환)
+  // 사용자ID·말머리가 비면 감싼 대괄호([])가 빈 채로 남는다 → 빈 대괄호 제거 후 중복 공백 정리.
+  const pre = s.replace(/\[\s*\]/g, '').replace(/\s{2,}/g, ' ').trim();
+  return pre ? pre + ' ' + text : text;       // 접두 + 한 칸 + 원문
 }
 
 // ── 비파괴 공개형 마스킹(SE-6) ─────────────────────────────────────────────
@@ -122,7 +131,7 @@ function makeRow(line) {
     row.appendChild(chk);
   }
 
-  if (card.type === 'callmemo' && line.t) {
+  if (line.t && card.timeDisplay && card.timeDisplay !== 'off') { // 화면 말머리(줄 앞 시각): 끔이 아니고 줄에 시각이 있을 때만
     const time = document.createElement('span');
     time.className = 'time'; time.textContent = fmtLineTime(line.t);
     row.appendChild(time);
@@ -233,6 +242,18 @@ function showRowMenu(x, y, line, row) {
   }, 0);
 }
 
+// 말머리 드롭다운 채우기 — 패널 등록 목록(settings.headers) + 이 노트가 고른 값. 패널에서 목록이 바뀌면 다시 호출해 갱신.
+function fillHeaderSelect(sel) {
+  if (!sel || !card) return;
+  const headers = Array.isArray(settings.headers) ? settings.headers : [];
+  const cur = (card.format && card.format.header) || '';
+  const opts = [''].concat(headers);
+  if (cur && !headers.includes(cur)) opts.push(cur); // 목록에서 지워진 값도 이 노트에선 보존
+  sel.innerHTML = '';
+  for (const h of opts) { const o = document.createElement('option'); o.value = h; o.textContent = (h === '') ? '(없음)' : h; sel.appendChild(o); }
+  sel.value = cur;
+}
+
 function renderList(body) {
   body.innerHTML = '';
   maskEls.length = 0; // 재렌더 시 표시 요소 레지스트리 초기화
@@ -241,17 +262,16 @@ function renderList(body) {
   // 복사 서식 편집 박스 (목록형 카드만). 재렌더(옵션 변경 등) 후에도 열림 상태 유지(fmtOpen).
   const fmtbox = document.createElement('div');
   fmtbox.className = 'fmtbox'; fmtbox.hidden = !fmtOpen || card.type === 'todo';
-  const isCall = card.type === 'callmemo';
-  // 화면 말머리(.time)와 복사 서식을 분리: 복사 서식(fmtTpl)은 모든 토큰 자유 편집, 화면 말머리는 컴팩트(시간/날짜+시간)만.
+  // 노트 통합 서식: 화면 말머리 + 시각 기준 + 자동 삭제를 한 패널에(상용구·기록 메모 기능 합침). 복사 서식(fmtTpl)은 모든 토큰 자유 편집.
   fmtbox.innerHTML =
     '<label><input type="checkbox" id="copyOn"> 줄 클릭으로 복사</label>' +
-    '<label><input type="checkbox" id="fmtOn"> 복사 시 서식 적용</label>' +
-    '<input class="tpl" id="fmtTpl" placeholder="[{날짜단축} {시간}] {내용}">' +
+    '<label><input type="checkbox" id="fmtOn"> 복사 시 서식 적용 (내용 앞에 붙음)</label>' +
+    '<input class="tpl" id="fmtTpl" placeholder="예: [{날짜단축} {시간}] ">' +
     '<div class="tokens" id="tokchips"></div>' +
-    (isCall ?
-      '<label class="tb">화면 말머리 <select id="timeDisp"><option value="time">시간만</option><option value="datetime">날짜+시간</option></select></label>'
-      + '<label class="tb" title="설정한 기간이 지난 줄은 다음 실행 시 자동으로 삭제됩니다(개인정보 보호). \'안 함\'이면 삭제하지 않습니다.">자동 삭제 <select id="ttlSel"><option value="0">안 함</option><option value="7">7일 후</option><option value="14">14일 후</option><option value="30">30일 후</option><option value="60">60일 후</option><option value="90">90일 후</option></select></label>'
-      : '<label class="tb">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="callStart">통화 시작</option></select></label>');
+    '<label class="tb">말머리 <select id="hdrSel"></select></label>' +
+    '<label class="tb">화면 말머리 <select id="timeDisp"><option value="off">끔</option><option value="time">시간만</option><option value="datetime">날짜+시간</option></select></label>' +
+    '<label class="tb" title="복사 스탬프의 {시간}/{날짜}가 가리키는 시각. 복사 시점=복사하는 지금, 줄 작성시각=그 줄을 적은 때, 통화 시작=카드 생성 시각.">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="lineTime">줄 작성시각</option><option value="callStart">통화 시작</option></select></label>' +
+    '<label class="tb" title="설정한 기간이 지난 줄은 다음 실행 시 자동으로 삭제됩니다(개인정보 보호). \'안 함\'이면 삭제하지 않습니다.">자동 삭제 <select id="ttlSel"><option value="0">안 함</option><option value="7">7일 후</option><option value="14">14일 후</option><option value="30">30일 후</option><option value="60">60일 후</option><option value="90">90일 후</option></select></label>';
   body.appendChild(fmtbox);
   const copyOnBox = fmtbox.querySelector('#copyOn');
   const fmtOn = fmtbox.querySelector('#fmtOn');
@@ -277,14 +297,14 @@ function renderList(body) {
     fmtTpl.dispatchEvent(new Event('input', { bubbles: true })); // 저장 핸들러 재사용
   };
   const tlbl = document.createElement('span'); tlbl.className = 'tklbl'; tlbl.textContent = '넣기'; tokchips.appendChild(tlbl);
-  ['{날짜단축}', '{시간}', '{날짜}', '{사용자ID}', '{내용}'].forEach((t) => {
+  ['{날짜단축}', '{시간}', '{날짜}', '[{사용자ID}]', '[{말머리}]'].forEach((t) => { // 사용자ID·말머리는 기본 []로 감싸 삽입(불필요하면 템플릿에서 대괄호 삭제). {내용}은 자동으로 뒤에 붙음
     const b = document.createElement('button'); b.type = 'button'; b.className = 'tok'; b.textContent = t;
     b.addEventListener('click', (ev) => { ev.preventDefault(); insertToken(t); });
     tokchips.appendChild(b);
   });
 
-  if (timeDisp) { // 화면 말머리(.time)만 제어 — 복사 서식과 독립. 컴팩트하게 시간/날짜+시간만(기존 custom은 날짜+시간으로 표시).
-    timeDisp.value = (card.timeDisplay === 'time') ? 'time' : 'datetime';
+  if (timeDisp) { // 화면 말머리(.time): 끔/시간/날짜+시간. 끔이면 줄 앞 시각 미표시(상용구처럼).
+    timeDisp.value = ['off', 'time', 'datetime'].includes(card.timeDisplay) ? card.timeDisplay : 'off';
     timeDisp.addEventListener('change', () => { card.timeDisplay = timeDisp.value; saveCard({ timeDisplay: card.timeDisplay }); renderList(body); });
   }
   // 자동 삭제(보관기간) — 카드별. 0/미설정 = 삭제 안 함(purgeExpired 동작과 일치 → 기존 카드를 자동으로 삭제 켜지 않음). 변경은 다음 실행 시 반영.
@@ -296,6 +316,12 @@ function renderList(body) {
     }
     ttlSel.value = cur;
     ttlSel.addEventListener('change', () => { card.ttlDays = parseInt(ttlSel.value, 10) || 0; saveCard({ ttlDays: card.ttlDays }); });
+  }
+  // 말머리 드롭다운: 패널에 등록해 둔 말머리 목록(settings.headers)을 불러와 선택. 선택값은 {말머리} 토큰에 치환됨.
+  const hdrSel = fmtbox.querySelector('#hdrSel');
+  if (hdrSel) {
+    fillHeaderSelect(hdrSel);
+    hdrSel.addEventListener('change', () => { card.format.header = hdrSel.value; saveCard({ format: card.format }); });
   }
   document.getElementById('fmt').onclick = () => { fmtOpen = !fmtOpen; fmtbox.hidden = !fmtOpen; };
 
@@ -318,7 +344,7 @@ function renderList(body) {
 
   const addLine = (txt) => {
     const ln = { text: txt };
-    if (card.type === 'callmemo') ln.t = Date.now();
+    if (card.type === 'callmemo' || card.type === 'note') ln.t = Date.now(); // 노트: 줄 작성 시각 기록(화면 말머리·줄 시각 기준용)
     if (card.type === 'todo') ln.done = false;
     card.lines.push(ln);
     list.insertBefore(makeRow(ln), ghost);
@@ -344,7 +370,7 @@ function renderList(body) {
 
   body.appendChild(list);
 
-  if (card.type === 'callmemo') { // ④b 콜메모 전체(양식) 복사
+  if (card.type === 'callmemo' || card.type === 'note') { // ④b 전체(양식) 복사 — 줄 누적 노트
     const allBtn = document.createElement('button');
     allBtn.className = 'allcopy'; allBtn.textContent = '전체 복사(양식)';
     allBtn.addEventListener('click', () => {
@@ -654,7 +680,7 @@ function setupBar() {
   rename.addEventListener('click', startRename);
   title.addEventListener('blur', () => {
     title.classList.remove('editing'); title.contentEditable = 'false';
-    card.title = title.textContent.trim() || ({ snippet: '상용구', callmemo: '기록 메모', memo: '메모', table: '표', todo: '할일' }[card.type] || '메모');
+    card.title = title.textContent.trim() || ({ note: '노트', snippet: '상용구', callmemo: '기록 메모', memo: '메모', table: '표', todo: '할일' }[card.type] || '메모');
     title.textContent = card.title;
     saveCard({ title: card.title });
   });
@@ -796,6 +822,13 @@ async function init() {
     const el = document.documentElement;
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); // 리플로우로 애니메이션 재시작
     setTimeout(() => el.classList.remove('flash'), 700);
+  });
+  // 패널에서 설정이 바뀌면(사용자ID 적용·개인정보 가리기 토글) 캐시를 갱신해 복사 서식/마스킹에 즉시 반영.
+  if (window.api.onSettingsChanged) window.api.onSettingsChanged((s) => {
+    if (s && typeof s === 'object') {
+      settings = s; refreshMask();
+      const sel = document.getElementById('hdrSel'); if (sel) fillHeaderSelect(sel); // 패널에서 말머리 추가/삭제 시 열린 노트 서식 드롭다운도 즉시 갱신
+    }
   });
   setupBar();
   const body = document.getElementById('body');
