@@ -21,6 +21,9 @@ const FALLBACK_SECTION = '공통';
 const FIXED_SECTIONS = new Set([FALLBACK_SECTION]);
 let deleteModeDismiss = null; // 섹션 삭제 모드('-') 바깥 클릭 해제 리스너
 let armedDelete = null;
+let presetDeleteMode = false;
+let presetDeleteDismiss = null;
+let armedPresetDelete = null;
 
 function disarmDeleteDismiss() {
   if (deleteModeDismiss) { document.removeEventListener('pointerdown', deleteModeDismiss, true); deleteModeDismiss = null; }
@@ -208,15 +211,88 @@ async function doSearch(q) {
   }
 }
 
+function disarmPresetDeleteDismiss() {
+  if (presetDeleteDismiss) { document.removeEventListener('pointerdown', presetDeleteDismiss, true); presetDeleteDismiss = null; }
+}
+
+function setPresetDeleteMode(on) {
+  presetDeleteMode = on;
+  armedPresetDelete = null;
+  const btn = $('#presetDeleteMode');
+  if (btn) {
+    btn.classList.toggle('active', presetDeleteMode);
+    btn.title = presetDeleteMode ? '프리셋 삭제 표시 끄기' : '프리셋 삭제 표시';
+  }
+  refreshPresets();
+  disarmPresetDeleteDismiss();
+  if (on) {
+    presetDeleteDismiss = (e) => {
+      if (!e.target.closest('#presets') && !e.target.closest('#presetDeleteMode')) setPresetDeleteMode(false);
+    };
+    setTimeout(() => document.addEventListener('pointerdown', presetDeleteDismiss, true), 0);
+  }
+}
+
 async function refreshPresets() {
   const names = await window.api.listPresets();
   const el = $('#presets');
+  const modeBtn = $('#presetDeleteMode');
+  if (modeBtn) {
+    modeBtn.hidden = !names.length;
+    if (!names.length) {
+      presetDeleteMode = false;
+      armedPresetDelete = null;
+      disarmPresetDeleteDismiss();
+      modeBtn.classList.remove('active');
+      modeBtn.title = '프리셋 삭제 표시';
+    }
+  }
+  armedPresetDelete = null;
   el.innerHTML = '';
   for (const name of names) {
     const b = document.createElement('span');
-    b.className = 'preset'; b.textContent = name;
-    b.title = '이 배치로 복원';
-    b.onclick = () => window.api.applyPreset(name);
+    b.className = 'preset' + (presetDeleteMode ? ' delete-mode' : '');
+    const label = document.createElement('span');
+    label.textContent = name;
+    b.appendChild(label);
+    if (presetDeleteMode) {
+      b.title = '삭제 버튼을 누르면 프리셋을 삭제합니다';
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'presetdel';
+      del.title = '프리셋 삭제';
+      del.textContent = '✕';
+      const resetDelete = () => {
+        if (armedPresetDelete !== name) return;
+        armedPresetDelete = null;
+        del.classList.remove('armed');
+        del.textContent = '✕';
+        del.title = '프리셋 삭제';
+      };
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (armedPresetDelete !== name) {
+          el.querySelectorAll('.presetdel.armed').forEach((btn) => {
+            btn.classList.remove('armed');
+            btn.textContent = '✕';
+            btn.title = '프리셋 삭제';
+          });
+          armedPresetDelete = name;
+          del.classList.add('armed');
+          del.textContent = '삭제';
+          del.title = '한 번 더 누르면 삭제됩니다';
+          setTimeout(resetDelete, 3500);
+          return;
+        }
+        await window.api.deletePreset(name);
+        armedPresetDelete = null;
+        await refreshPresets();
+      });
+      b.appendChild(del);
+    } else {
+      b.title = '이 배치로 복원';
+      b.onclick = () => window.api.applyPreset(name);
+    }
     el.appendChild(b);
   }
 }
@@ -452,6 +528,34 @@ function wire() {
     $('#presetName').value = '';
     refreshPresets();
   };
+  $('#autoArrange').onclick = async () => {
+    const btn = $('#autoArrange');
+    const undo = $('#undoArrange');
+    const label = btn.textContent;
+    btn.disabled = true;
+    try {
+      const r = await window.api.autoArrange();
+      if (r && r.ok) {
+        undo.hidden = !r.canUndo;
+        btn.textContent = `정렬 완료 ${r.count}`;
+      } else {
+        btn.textContent = '정렬 없음';
+      }
+    } catch (_) {
+      btn.textContent = '정렬 실패';
+    } finally {
+      setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 900);
+    }
+    await refreshCards();
+  };
+  $('#undoArrange').onclick = async () => {
+    const r = await window.api.undoArrange();
+    if (r && r.ok) {
+      $('#undoArrange').hidden = true;
+      await refreshCards();
+    }
+  };
+  $('#presetDeleteMode').onclick = () => setPresetDeleteMode(!presetDeleteMode);
 
   // 사용자ID: 입력 즉시가 아니라 '적용'(또는 Enter/포커스 아웃)으로 명확히 확정 → 열린 카드 복사 서식에도 즉시 반영.
   const agentIdEl = $('#agentId');

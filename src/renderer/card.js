@@ -17,6 +17,7 @@ let settings = { agentId: '' };
 let appStatus = {};
 let fmtOpen = false; // 복사 서식(#) 박스 열림 상태(재렌더에도 유지)
 let setCardCollapsed = null; // 접기 상태 제어(setupBar에서 설정) — 패널 더블클릭 신호로 펼치기에 사용
+let applyPresetState = null; // 프리셋 적용 시 메인에서 바뀐 접힘 상태를 렌더러 UI에 반영
 let findOpen = false;
 let findTerm = '';
 let findIndex = 0;
@@ -1050,16 +1051,21 @@ function setupBar() {
 
   const fold = document.getElementById('fold');
   const setFoldIcon = () => { fold.innerHTML = card.collapsed ? CHEVRON_DOWN_SVG : CHEVRON_UP_SVG; }; // 접힘=펼치기(∨) / 펼침=접기(∧)
-  if (card.collapsed) document.documentElement.classList.add('collapsed');
-  setFoldIcon();
-  const setCollapsed = (val) => {
-    if (!!card.collapsed === !!val) return;
+  const renderCollapsed = (val) => {
     card.collapsed = !!val;
     document.documentElement.classList.toggle('collapsed', card.collapsed);
     setFoldIcon();
+  };
+  renderCollapsed(card.collapsed);
+  const setCollapsed = (val) => {
+    if (!!card.collapsed === !!val) return;
+    renderCollapsed(val);
     window.api.collapse(ID, card.collapsed);
   };
   setCardCollapsed = setCollapsed; // 패널 더블클릭 신호에서 펼치기 호출(item 1)
+  applyPresetState = (state) => {
+    if (state && Object.prototype.hasOwnProperty.call(state, 'collapsed')) renderCollapsed(state.collapsed);
+  };
   fold.onclick = () => setCollapsed(!card.collapsed);
   // 헤더 더블클릭으로도 접기/펼치기 (이름 편집 중 단어 선택과 겹치지 않게 제외)
   title.addEventListener('dblclick', () => { if (!title.classList.contains('editing')) setCollapsed(!card.collapsed); });
@@ -1267,6 +1273,7 @@ async function init() {
   }
   document.addEventListener('paste', forcePlainPaste, true); // 붙여넣기 평문 통일(링크 앵커 텍스트가 아닌 URL 원본)
   if (window.api.onFlash) window.api.onFlash((count) => playFlash(count)); // 패널/알림 신호: 접힌 카드도 펼치고 흔들기
+  if (window.api.onPresetState) window.api.onPresetState((state) => { if (applyPresetState) applyPresetState(state); });
   if (window.api.onReminderFired) window.api.onReminderFired(() => {
     card.reminderAt = null;
     updateReminderButton();

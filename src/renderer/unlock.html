@@ -12,7 +12,7 @@
     .bar { height: 30px; -webkit-app-region: drag; display: flex; align-items: center; padding: 0 12px;
            font-size: 12px; color: #6b7280; }
     .bar img { width: 14px; height: 14px; margin-right: 6px; }
-    .wrap { flex: 1; padding: 4px 22px 18px; display: flex; flex-direction: column; gap: 9px; }
+    .wrap { flex: 1; padding: 4px 22px 18px; display: flex; flex-direction: column; gap: 8px; }
     h1 { font-size: 15px; margin: 2px 0; }
     .sub { font-size: 12px; color: #6b7280; margin: 0; line-height: 1.4; }
     input { -webkit-app-region: no-drag; padding: 9px 10px; font-size: 13px; border: 1px solid #cdd3dd;
@@ -20,9 +20,14 @@
     input:focus { border-color: #3b82f6; }
     .err { font-size: 12px; color: #c0392b; min-height: 15px; }
     .btns { display: flex; gap: 8px; justify-content: flex-end; -webkit-app-region: no-drag; }
+    .reset { -webkit-app-region: no-drag; border-top: 1px solid #e5e7eb; margin-top: 4px; padding-top: 10px;
+             display: flex; flex-direction: column; gap: 7px; }
+    .reset[hidden] { display: none; }
+    .reset-title { margin: 0; font-size: 12px; font-weight: 700; color: #991b1b; }
     button { padding: 8px 14px; font-size: 13px; border: 1px solid #cdd3dd; background: #f6f8fb;
              border-radius: 7px; cursor: pointer; }
     button#go { background: #2563eb; color: #fff; border-color: #2563eb; }
+    button#resetBtn { width: 100%; background: #b91c1c; color: #fff; border-color: #b91c1c; }
     button:disabled { opacity: .5; cursor: default; }
   </style>
 </head>
@@ -36,6 +41,12 @@
     <div class="btns">
       <button id="quit" type="button">종료</button>
       <button id="go" type="button">잠금 해제</button>
+    </div>
+    <div class="reset" id="resetBox" hidden>
+      <p class="reset-title">비밀번호를 잊으셨나요?</p>
+      <p class="sub">비밀번호는 복구할 수 없습니다. 15회 실패 시 자동 초기화됩니다.</p>
+      <input id="resetText" placeholder="'초기화' 입력" autocomplete="off" />
+      <button id="resetBtn" type="button" disabled>모든 데이터 삭제 후 초기화</button>
     </div>
   </div>
   <script src="unlock.js"></script>

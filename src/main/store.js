@@ -43,6 +43,25 @@ function writeKeyFileAtomic(buf) {
 function clearKeyBak() { try { fs.rmSync(KEY_FILE() + '.bak', { force: true }); } catch (_) {} }
 function restoreKeyBak() { try { const b = KEY_FILE() + '.bak'; if (fs.existsSync(b)) fs.renameSync(b, KEY_FILE()); } catch (_) {} }
 
+function resetLocalData() {
+  if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+  const dir = app.getPath('userData');
+  const removable = new Set(['workpad-data.enc', 'workpad-data.enc.tmp', 'workpad-key.bin', 'workpad-key.bin.tmp', 'workpad-key.bin.bak']);
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      if (removable.has(name) || name.startsWith('workpad-data.enc.corrupt-')) {
+        try { fs.rmSync(path.join(dir, name), { force: true }); } catch (_) {}
+      }
+    }
+  } catch (_) {}
+  dek = null;
+  state = null;
+  keyMode = 'new';
+  keyProtected = false;
+  lastLoadError = null;
+  return true;
+}
+
 // 비밀번호 모드가 아닌 키(0x01 DPAPI / 0x00 평문)를 DEK로 언래핑(읽기 전용 — 재래핑 readback 검증용). 부적합 시 throw.
 function unwrapNonPassphrase(raw) {
   const mode = raw[0], body = raw.subarray(1);
@@ -301,6 +320,7 @@ const api = {
   isKeyProtected: () => keyProtected,
   getLoadError: () => lastLoadError,
   getState: () => state,
+  resetLocalData,
   // 가져오기(백업 복원): 전체 상태 교체. 누락 필드/설정 보정 후 즉시 저장.
   replaceState: (incoming) => {
     const next = Object.assign(defaultState(), incoming || {});
@@ -328,6 +348,12 @@ const api = {
   listPresets: () => Object.keys(state.presets),
   savePreset: (name, snapshot) => { state.presets[name] = snapshot; scheduleSave(); },
   getPreset: (name) => state.presets[name] || null,
+  deletePreset: (name) => {
+    if (!Object.prototype.hasOwnProperty.call(state.presets, name)) return false;
+    delete state.presets[name];
+    scheduleSave();
+    return true;
+  },
 };
 
 module.exports = api;

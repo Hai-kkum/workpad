@@ -41,7 +41,14 @@
     </div>
 
     <div class="sec">
-      <div class="lbl">배치 프리셋</div>
+      <div class="sechead">
+        <span class="lbl">배치 프리셋</span>
+        <span class="mini"><button id="presetDeleteMode" title="프리셋 삭제 표시" hidden>-</button></span>
+      </div>
+      <div class="row layout-actions">
+        <button id="autoArrange">자동 정렬</button>
+        <button id="undoArrange" hidden>정렬 취소</button>
+      </div>
       <div class="row">
         <input id="presetName" placeholder="프리셋 이름" />
         <button id="savePreset">저장</button>

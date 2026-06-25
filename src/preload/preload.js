@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('api', {
   status: () => ipcRenderer.invoke('app:status'),
   // 비밀번호 잠금(SE-9)
   unlockTry: (pass) => ipcRenderer.invoke('unlock:try', pass),
+  unlockReset: (confirmText) => ipcRenderer.invoke('unlock:reset', confirmText),
   unlockQuit: () => ipcRenderer.invoke('unlock:quit'),
   lockStatus: () => ipcRenderer.invoke('lock:status'),
   lockEnable: (pass) => ipcRenderer.invoke('lock:enable', pass),
@@ -35,6 +36,7 @@ contextBridge.exposeInMainWorld('api', {
   pickNoteUpload: () => ipcRenderer.invoke('note:pickUpload'),
   setReminder: (id, at) => ipcRenderer.invoke('card:setReminder', id, at),
   onFlash: (cb) => ipcRenderer.on('card:flash', (_e, count) => cb(count)), // 카드 렌더러: 패널 더블클릭 신호 수신
+  onPresetState: (cb) => ipcRenderer.on('card:presetState', (_e, state) => cb(state)),
   onReminderFired: (cb) => ipcRenderer.on('reminder:fired', () => cb()),
   search: (q) => ipcRenderer.invoke('search', q),
   // 패널 헤더 제어(프레임리스)
@@ -46,6 +48,8 @@ contextBridge.exposeInMainWorld('api', {
   panelMinimize: () => ipcRenderer.invoke('panel:minimize'),
   panelClose: () => ipcRenderer.invoke('panel:close'),
   panelState: () => ipcRenderer.invoke('panel:getState'),
+  autoArrange: () => ipcRenderer.invoke('panel:autoArrange'),
+  undoArrange: () => ipcRenderer.invoke('panel:undoArrange'),
   // 패널
   listCards: () => ipcRenderer.invoke('panel:listCards'),
   createCard: (type, section) => ipcRenderer.invoke('panel:createCard', type, section),
@@ -59,5 +63,6 @@ contextBridge.exposeInMainWorld('api', {
   // 프리셋
   listPresets: () => ipcRenderer.invoke('preset:list'),
   savePreset: (name) => ipcRenderer.invoke('preset:save', name),
+  deletePreset: (name) => ipcRenderer.invoke('preset:delete', name),
   applyPreset: (name) => ipcRenderer.invoke('preset:apply', name),
 });

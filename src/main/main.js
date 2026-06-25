@@ -33,6 +33,7 @@ let booted = false;    // boot() 1회만(재진입·중복 IPC 등록 방지)
 const cards = new Map(); // id -> BrowserWindow
 const cardOwners = new Map(); // id -> 카드별 숨은 owner 창. 카드마다 개별 owner라야 클릭 시 그 카드만 앞으로 옴(공유 owner면 그룹 전체가 올라옴).
 const reminderTimers = new Map(); // id -> setTimeout handle
+let lastArrangeSnapshot = null; // 자동 정렬 직전 배치(정렬 취소용, 메모리 한정)
 
 // 배포용 설정(보안팀 제어). 앱 폴더의 workpad.config.json.
 // allowDataTransfer=false면 백업/복원/노트 파일 업로드를 모두 차단하고,
@@ -496,6 +497,133 @@ function toggleAll() {
   notifyPanel();
 }
 
+function visibleCardLayouts() {
+  const out = [];
+  for (const [id, win] of cards) {
+    if (win.isDestroyed() || !win.isVisible()) continue;
+    const b = win.getBounds();
+    const c = store.getCard(id);
+    const collapsed = !!win._collapsed;
+    const expandedHeight = collapsed && c && c.bounds && c.bounds.height ? c.bounds.height : b.height;
+    out.push({ id, win, bounds: b, collapsed, expandedHeight });
+  }
+  return out.sort((a, b) => (a.bounds.y - b.bounds.y) || (a.bounds.x - b.bounds.x));
+}
+
+function autoArrangeCardsByPanel() {
+  if (!panelWin || panelWin.isDestroyed()) return { ok: false, reason: 'nopanel' };
+  const items = visibleCardLayouts();
+  if (!items.length) return { ok: false, reason: 'empty' };
+
+  const GAP = 10;
+  const MARGIN = 10;
+  const panelBounds = panelWin.getBounds();
+  const display = screen.getDisplayMatching(panelBounds) || screen.getPrimaryDisplay();
+  const wa = display.workArea;
+  const left = wa.x + MARGIN;
+  const top = wa.y + MARGIN;
+  const right = wa.x + wa.width - MARGIN;
+  const bottom = wa.y + wa.height - MARGIN;
+  const panelRight = panelBounds.x + panelBounds.width;
+
+  const leftRange = { start: left, end: Math.min(right, panelBounds.x - GAP) };
+  const rightRange = { start: Math.max(left, panelRight + GAP), end: right };
+  const leftWidth = Math.max(0, leftRange.end - leftRange.start);
+  const rightWidth = Math.max(0, rightRange.end - rightRange.start);
+  let side = 'right';
+  let range = rightRange;
+  if (rightWidth < 160 && leftWidth > rightWidth) {
+    side = 'left';
+    range = leftRange;
+  }
+  if (range.end - range.start < 160) range = { start: left, end: right };
+
+  const availableW = Math.max(160, right - left);
+  const availableH = Math.max(COLLAPSED_H, bottom - top);
+  for (const item of items) {
+    item.width = Math.min(Math.max(Math.round(item.bounds.width), 160), availableW);
+    const visibleHeight = item.collapsed ? COLLAPSED_H : item.bounds.height;
+    item.height = Math.min(Math.max(Math.round(visibleHeight), COLLAPSED_H), availableH);
+  }
+
+  const firstHeight = items[0] ? items[0].height : COLLAPSED_H;
+  const startY = Math.max(top, Math.min(panelBounds.y, Math.max(top, bottom - firstHeight)));
+  const columns = [];
+  let col = [];
+  let y = startY;
+  for (const item of items) {
+    if (col.length && y + item.height > bottom) {
+      columns.push(col);
+      col = [];
+      y = startY;
+    }
+    if (!col.length && y + item.height > bottom) y = top;
+    item.y = Math.round(y);
+    col.push(item);
+    y += item.height + GAP;
+  }
+  if (col.length) columns.push(col);
+
+  lastArrangeSnapshot = items.map((item) => ({
+    id: item.id,
+    bounds: item.bounds,
+    collapsed: item.collapsed,
+    expandedHeight: item.expandedHeight,
+    visible: item.win.isVisible(),
+  }));
+
+  let offset = 0;
+  for (const column of columns) {
+    const colWidth = Math.max(...column.map((item) => item.width));
+    const rawX = side === 'right' ? range.start + offset : range.end - offset - colWidth;
+    const colX = Math.round(Math.max(left, Math.min(rawX, right - colWidth)));
+    for (const item of column) {
+      const x = side === 'right' ? colX : colX + colWidth - item.width;
+      const target = { x: Math.round(x), y: item.y, width: item.width, height: item.height };
+      item.win.setBounds(target);
+      store.updateBounds(item.id, {
+        x: target.x, y: target.y, width: target.width,
+        height: item.collapsed ? item.expandedHeight : target.height,
+      });
+    }
+    offset += colWidth + GAP;
+  }
+  notifyPanel();
+  return { ok: true, count: items.length, canUndo: true };
+}
+
+function undoAutoArrange() {
+  const snap = lastArrangeSnapshot;
+  if (!snap || !snap.length) return { ok: false, reason: 'empty' };
+  lastArrangeSnapshot = null;
+  let count = 0;
+  for (const item of snap) {
+    const win = cards.get(item.id);
+    if (!win || win.isDestroyed()) continue;
+    win._collapsed = !!item.collapsed;
+    win.setResizable(!item.collapsed);
+    win.setBounds({
+      x: item.bounds.x,
+      y: item.bounds.y,
+      width: item.bounds.width,
+      height: item.collapsed ? COLLAPSED_H : item.bounds.height,
+    });
+    store.updateBounds(item.id, {
+      x: item.bounds.x,
+      y: item.bounds.y,
+      width: item.bounds.width,
+      height: item.expandedHeight,
+    });
+    store.updateCard(item.id, { collapsed: !!item.collapsed });
+    win.webContents.send('card:presetState', { collapsed: !!item.collapsed });
+    if (item.visible) { win.show(); store.setVisible(item.id, true); }
+    else { win.hide(); store.setVisible(item.id, false); }
+    count += 1;
+  }
+  notifyPanel();
+  return { ok: true, count };
+}
+
 function applyHotkey(accel) {
   globalShortcut.unregisterAll();
   if (!accel) return;
@@ -711,6 +839,8 @@ function registerIpc() {
   ipcMain.handle('panel:minimize', () => { if (panelWin && !panelWin.isDestroyed()) panelWin.minimize(); });
   ipcMain.handle('panel:close', () => { if (panelWin && !panelWin.isDestroyed()) panelWin.close(); });
   ipcMain.handle('panel:getState', () => ({ alwaysOnTop: !!store.getSettings().panelAlwaysOnTop }));
+  ipcMain.handle('panel:autoArrange', () => autoArrangeCardsByPanel());
+  ipcMain.handle('panel:undoArrange', () => undoAutoArrange());
   ipcMain.handle('panel:listCards', () => store.listCards());
   ipcMain.handle('panel:createCard', (_e, type, section) => {
     const card = defaultCard(['memo', 'table', 'todo', 'note'].includes(type) ? type : 'note', section);
@@ -764,18 +894,25 @@ function registerIpc() {
     store.savePreset(name, snap);
     return store.listPresets();
   });
+  ipcMain.handle('preset:delete', (_e, name) => {
+    store.deletePreset(String(name || ''));
+    return store.listPresets();
+  });
   ipcMain.handle('preset:apply', (_e, name) => {
     const snap = store.getPreset(name);
     if (!snap) return false;
     for (const [id, conf] of Object.entries(snap)) {
       const win = cards.get(id);
       if (!win || win.isDestroyed()) continue;
-      // 접힌 창은 높이를 건드리지 않고 위치/너비만(렌더러 접힘 상태와 desync 방지). store엔 펼침 bounds 보존.
       // 프리셋이 사라진 모니터 좌표를 담고 있어도 보이는 화면 안으로 클램프(item 3).
       const safe = clampToVisible(conf.bounds);
-      const target = win._collapsed ? { x: safe.x, y: safe.y, width: safe.width } : safe;
-      win.setBounds(target);
+      const collapsed = Object.prototype.hasOwnProperty.call(conf, 'collapsed') ? !!conf.collapsed : !!win._collapsed;
+      win._collapsed = collapsed;
+      win.setResizable(!collapsed);
+      win.setBounds(collapsed ? { x: safe.x, y: safe.y, width: safe.width, height: COLLAPSED_H } : safe);
       store.updateBounds(id, conf.bounds);
+      store.updateCard(id, { collapsed });
+      win.webContents.send('card:presetState', { collapsed });
       if (conf.visible) { win.show(); store.setVisible(id, true); } else { win.hide(); store.setVisible(id, false); }
     }
     return true;
@@ -804,9 +941,12 @@ function boot() {
 
 // 비밀번호 잠금(SE-9) 해제 창. 해제 전엔 데이터 미로드 → 다른 창은 안 띄움.
 let unlockWin = null;
+let unlockFailures = 0;
+const RESET_UNLOCK_FAILURES = 3;
+const FORCE_RESET_UNLOCK_FAILURES = 15;
 function createUnlockWindow() {
   unlockWin = new BrowserWindow({
-    width: 360, height: 250, resizable: false, frame: false,
+    width: 380, height: 360, resizable: false, frame: false,
     maximizable: false, minimizable: false, fullscreenable: false,
     backgroundColor: '#ffffff', icon: APP_ICON, title: 'Workpad',
     webPreferences: { preload: PRELOAD, contextIsolation: true, sandbox: true, nodeIntegration: false },
@@ -817,19 +957,41 @@ function createUnlockWindow() {
   unlockWin.on('closed', () => { const w = unlockWin; unlockWin = null; if (w && !store.getState()) app.quit(); });
 }
 
+function resetLockedDataAndRelaunch(reason) {
+  logf('reset locked data: ' + reason);
+  store.resetLocalData();
+  app.relaunch();
+  app.exit(0);
+}
+
 // 잠금 창이 쓰는 IPC만 먼저 등록(본 IPC는 boot에서 — 해제 전엔 데이터가 없어 호출 불가).
 function registerUnlockIpc() {
   ipcMain.handle('unlock:try', (e, pass) => {
-    if (booted || !isFrom(e, unlockWin)) return false; // 잠금 창에서만 + 1회만(Codex P2)
+    if (booted || !isFrom(e, unlockWin)) return { ok: false, failures: unlockFailures }; // 잠금 창에서만 + 1회만(Codex P2)
     const ok = store.unlockWithPassphrase(pass);
     if (ok) {
+      unlockFailures = 0;
       logf('unlock ok, keyProtected=' + store.isKeyProtected());
       const w = unlockWin; unlockWin = null;
       boot();
-      ipcMain.removeHandler('unlock:try'); ipcMain.removeHandler('unlock:quit'); // 해제 후 채널 제거(재호출 차단)
+      ipcMain.removeHandler('unlock:try'); ipcMain.removeHandler('unlock:reset'); ipcMain.removeHandler('unlock:quit'); // 해제 후 채널 제거(재호출 차단)
       if (w && !w.isDestroyed()) w.close();
     }
-    return ok;
+    if (!ok) {
+      unlockFailures += 1;
+      if (unlockFailures >= FORCE_RESET_UNLOCK_FAILURES) {
+        resetLockedDataAndRelaunch('too many unlock failures');
+        return { ok: false, failures: unlockFailures, forceReset: true };
+      }
+    }
+    return { ok, failures: unlockFailures, canReset: unlockFailures >= RESET_UNLOCK_FAILURES, forceAt: FORCE_RESET_UNLOCK_FAILURES };
+  });
+  ipcMain.handle('unlock:reset', (e, confirmText) => {
+    if (booted || !isFrom(e, unlockWin)) return { ok: false, reason: 'forbidden' };
+    if (unlockFailures < RESET_UNLOCK_FAILURES) return { ok: false, reason: 'locked', failures: unlockFailures };
+    if (String(confirmText || '').trim() !== '초기화') return { ok: false, reason: 'confirm' };
+    resetLockedDataAndRelaunch('manual reset after unlock failures');
+    return { ok: true };
   });
   ipcMain.handle('unlock:quit', (e) => { if (isFrom(e, unlockWin)) app.quit(); });
 }

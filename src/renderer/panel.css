@@ -54,6 +54,7 @@ body.collapsed .content { display: none; }
 .sechead .lbl { margin-bottom: 0; }
 .mini { display: flex; gap: 4px; }
 .mini button { font-size: 11px; padding: 2px 8px; color: #6b7280; border-color: #e7e9ec; }
+.mini button.active { background: #fff3f3; border-color: #f0b8b8; color: #c0392b; }
 .mini .vistoggle { display: inline-flex; align-items: center; gap: 4px; }
 .mini .vistoggle svg { width: 12px; height: 12px; flex: 0 0 auto; }
 .addline { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -132,6 +133,15 @@ input:focus { border-color: #2563eb; }
 .presets { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
 .preset { font-size: 12px; padding: 3px 9px; border: 1px solid #d7dbe0; border-radius: 999px; cursor: pointer; }
 .preset:hover { background: #f3f4f6; }
+.preset.delete-mode { display: inline-flex; align-items: center; gap: 5px; padding-right: 5px; cursor: default; }
+.presetdel {
+  border: 0; background: transparent; color: #9aa1ab; cursor: pointer;
+  width: 16px; height: 16px; border-radius: 50%; font-size: 10px; line-height: 1; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.presetdel:hover, .presetdel.armed { color: #c0392b; background: #fdecea; }
+.presetdel.armed { width: auto; padding: 1px 6px; border-radius: 999px; font-size: 11px; }
+.layout-actions { margin-top: 0; }
 
 /* 말머리 칩(복사 서식 {말머리} 후보) */
 .hdrs { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }

@@ -1,7 +1,7 @@
 {
   "name": "workpad",
   "productName": "Workpad",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "오피스용 로컬 플로팅 카드 메모 도구 — 메모장을 대체하는 오프라인 워크벤치 (offline floating-card workpad for office teams)",
   "license": "MIT",
   "author": "Hai-kkum",
@@ -25,7 +25,10 @@
       "workpad.config.json"
     ],
     "win": {
-      "target": ["portable", "nsis"],
+      "target": [
+        "portable",
+        "nsis"
+      ],
       "icon": "assets/brand/workpad-app-icon.ico"
     },
     "portable": {
