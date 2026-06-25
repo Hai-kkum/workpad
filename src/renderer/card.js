@@ -4,6 +4,8 @@
 const COPY_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>';
 const CHECK_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l5 5L19 7"/></svg>';
 const PENCIL_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L18 10l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>';
+const SEARCH_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>';
+const BELL_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>';
 // 헤더 아이콘: 얇은 글리프(위·—)를 또렷한 SVG로 — 핀(항상위) + 접기/펼치기 셰브론(상태별 ∧/∨).
 const PIN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
 const CHEVRON_UP_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 14l6-6 6 6"/></svg>';
@@ -12,12 +14,74 @@ const CHEVRON_DOWN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="
 const ID = new URLSearchParams(location.search).get('id');
 let card = null;
 let settings = { agentId: '' };
+let appStatus = {};
 let fmtOpen = false; // 복사 서식(#) 박스 열림 상태(재렌더에도 유지)
 let setCardCollapsed = null; // 접기 상태 제어(setupBar에서 설정) — 패널 더블클릭 신호로 펼치기에 사용
+let findOpen = false;
+let findTerm = '';
+let findIndex = 0;
+let reminderOpen = false;
+let renderCardBody = null;
+let selectedLine = null;
+let flashTimer = null;
+const DEFAULT_FORMAT = { enabled: false, template: '[{날짜단축} {시간}] ', timeBasis: 'now' };
 
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const saveCard = debounce((patch) => window.api.updateCard(ID, patch), 300);
 const persistLines = () => saveCard({ lines: card.lines });
+
+function updateFormatBarControls() {
+  document.querySelectorAll('[data-line-style]').forEach((btn) => {
+    const key = btn.dataset.lineStyle;
+    btn.disabled = !selectedLine;
+    btn.classList.toggle('active', !!selectedLine && !!selectedLine[key]);
+  });
+  document.querySelectorAll('[data-line-check]').forEach((btn) => {
+    btn.disabled = !selectedLine;
+    btn.classList.toggle('active', !!selectedLine && !!selectedLine.checkable);
+  });
+}
+function setSelectedLine(line) {
+  selectedLine = line || null;
+  document.querySelectorAll('.row.selected').forEach((el) => el.classList.remove('selected'));
+  document.querySelectorAll('.row').forEach((el) => {
+    if (el._line === selectedLine) el.classList.add('selected');
+  });
+  updateFormatBarControls();
+}
+function supportsLineFormatting() {
+  return card && (card.type === 'note' || card.type === 'todo');
+}
+function supportsChecklistMode() {
+  return card && (card.type === 'note' || card.type === 'todo');
+}
+function normalizeCardForRender() {
+  const patch = {};
+  let formatChanged = false;
+  if (!card.format || typeof card.format !== 'object' || Array.isArray(card.format)) {
+    card.format = {};
+    formatChanged = true;
+  }
+  if (card.format.enabled == null) { card.format.enabled = DEFAULT_FORMAT.enabled; formatChanged = true; }
+  if (typeof card.format.template !== 'string') { card.format.template = DEFAULT_FORMAT.template; formatChanged = true; }
+  if (card.format.timeBasis == null) { card.format.timeBasis = DEFAULT_FORMAT.timeBasis; formatChanged = true; }
+  if (formatChanged) patch.format = card.format;
+
+  if ((card.type === 'note' || card.type === 'todo' || card.type === 'callmemo') && !Array.isArray(card.lines)) {
+    card.lines = [];
+    patch.lines = card.lines;
+  }
+  if (card.type === 'memo' && (!card.content || typeof card.content !== 'object')) {
+    card.content = { text: '' };
+    patch.content = card.content;
+  }
+  if (card.type === 'table' && !Array.isArray(card.rows)) {
+    card.rows = [['항목', '값'], ['', '']];
+    patch.rows = card.rows;
+  }
+
+  if (Object.keys(patch).length) window.api.updateCard(ID, patch);
+}
 
 function pad(n) { return String(n).padStart(2, '0'); }
 // 기록메모 줄 화면 말머리(시각). 복사 서식과 독립적으로 컴팩트하게 — time=시간만 / 그 외=날짜+시간(기본).
@@ -121,11 +185,15 @@ async function copyRow(text, raw, row, btn, when) {
 function makeRow(line) {
   const row = document.createElement('div');
   row.className = 'row';
+  row._line = line;
+  row.classList.toggle('selected', selectedLine === line);
+  row.classList.toggle('bold', !!line.bold);
+  row.classList.toggle('strike', !!line.strike);
+  row.classList.toggle('done', !!line.checkable && !!line.done);
 
-  if (card.type === 'todo') { // 할일: 줄마다 체크박스(완료 토글). 행 클릭/복사와 분리되도록 이벤트 차단.
+  if (line.checkable) { // 체크리스트: 완료 토글은 복사/편집과 분리.
     const chk = document.createElement('input');
     chk.type = 'checkbox'; chk.className = 'todochk'; chk.checked = !!line.done;
-    if (line.done) row.classList.add('done');
     ['pointerdown', 'pointerup', 'click', 'dblclick'].forEach((ev) => chk.addEventListener(ev, (e) => e.stopPropagation()));
     chk.addEventListener('change', () => { line.done = chk.checked; row.classList.toggle('done', chk.checked); persistLines(); });
     row.appendChild(chk);
@@ -137,10 +205,32 @@ function makeRow(line) {
     row.appendChild(time);
   }
 
+  const canFoldDetails = card.type === 'note' && ((Array.isArray(line.details) && line.details.length > 1) || String(line.text || '').includes('\n'));
+  if (canFoldDetails) {
+    row.classList.add('has-details');
+    const toggle = document.createElement('button');
+    toggle.className = 'detailtoggle';
+    toggle.type = 'button';
+    toggle.title = line.expanded || !card.detailsHidden ? '상세 접기' : '상세 보기';
+    toggle.textContent = line.expanded || !card.detailsHidden ? '▾' : '▸';
+    ['pointerdown', 'pointerup', 'click', 'dblclick'].forEach((ev) => toggle.addEventListener(ev, (e) => e.stopPropagation()));
+    toggle.addEventListener('click', () => { line.expanded = !line.expanded; persistLines(); if (renderCardBody) renderCardBody(); });
+    row.appendChild(toggle);
+  }
+
+  const content = document.createElement('span');
+  content.className = 'linecontent';
   const text = document.createElement('span');
   text.className = 'text'; text.setAttribute('contenteditable', 'false');
-  registerMask(text, () => line.text); // 화면=마스킹, 원문은 line.text 유지(SE-6)
-  row.appendChild(text);
+  registerMask(text, () => lineDisplayText(line)); // 화면=마스킹, 원문은 line.text 유지(SE-6)
+  content.appendChild(text);
+  if (canFoldDetails && (!card.detailsHidden || line.expanded)) {
+    const detail = document.createElement('span');
+    detail.className = 'linedetails';
+    registerMask(detail, () => lineDetailsText(line));
+    content.appendChild(detail);
+  }
+  row.appendChild(content);
 
   const copyOn = card.copyMode !== false; // ④a 카드별 복사 토글(기본 on)
   let copy = null;
@@ -153,11 +243,12 @@ function makeRow(line) {
 
   let downX = 0, downY = 0;
   row.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.copy')) return;
+    if (e.target.closest('.copy') || e.target.closest('.detailtoggle')) return;
+    setSelectedLine(line);
     downX = e.clientX; downY = e.clientY;
   });
   if (copyOn) row.addEventListener('pointerup', (e) => {
-    if (e.target.closest('.copy')) return;
+    if (e.target.closest('.copy') || e.target.closest('.detailtoggle')) return;
     if (text.getAttribute('contenteditable') === 'true') return;     // 편집 중엔 복사 안 함
     const dist = Math.hypot(e.clientX - downX, e.clientY - downY);
     if (dist >= 4) return;                                            // 드래그면 선택만
@@ -166,12 +257,12 @@ function makeRow(line) {
     row._copyTimer = setTimeout(() => copyRow(line.text, raw, row, copy, line.t), 180); // 원문 복사(더블클릭이면 취소됨)
   });
   row.addEventListener('dblclick', (e) => {
-    if (e.target.closest('.copy')) return;
+    if (e.target.closest('.copy') || e.target.closest('.detailtoggle')) return;
     clearTimeout(row._copyTimer);
     enterEdit(text, line, row);
   });
   row.addEventListener('contextmenu', (e) => {
-    if (e.target.closest('.copy')) return;
+    if (e.target.closest('.copy') || e.target.closest('.detailtoggle')) return;
     if (text.getAttribute('contenteditable') === 'true') return; // 편집 중엔 OS 기본 메뉴(붙여넣기 등)
     e.preventDefault();
     clearTimeout(row._copyTimer);
@@ -188,9 +279,19 @@ function enterEdit(text, line, row) {
   const commit = () => {
     text.setAttribute('contenteditable', 'false');
     const v = text.textContent.trim();
-    if (v === '') { const i = card.lines.indexOf(line); if (i >= 0) card.lines.splice(i, 1); row.remove(); }
-    else { line.text = v; paintMask(text, v); } // 저장 후 다시 마스킹 표시
+    if (v === '') {
+      const i = card.lines.indexOf(line);
+      if (i >= 0) card.lines.splice(i, 1);
+      if (selectedLine === line) setSelectedLine(null);
+      row.remove();
+    }
+    else {
+      line.text = v;
+      delete line.header; delete line.details; delete line.expanded;
+      paintMask(text, v);
+    } // 저장 후 다시 마스킹 표시
     persistLines();
+    if (renderCardBody) renderCardBody();
   };
   text.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); text.blur(); }
@@ -214,6 +315,7 @@ function showRowMenu(x, y, line, row) {
   del.addEventListener('click', () => {
     const i = card.lines.indexOf(line);
     if (i >= 0) card.lines.splice(i, 1);
+    if (selectedLine === line) setSelectedLine(null);
     row.remove();
     persistLines();
     closeRowMenu();
@@ -254,10 +356,133 @@ function fillHeaderSelect(sel) {
   sel.value = cur;
 }
 
+function supportsFind() { return card && (card.type === 'memo' || card.type === 'note' || card.type === 'callmemo'); }
+function supportsReminder() { return card && (card.type === 'memo' || card.type === 'note' || card.type === 'callmemo'); }
+
+function toLocalInputValue(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function fromLocalInputValue(v) {
+  if (!v) return null;
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) ? t : null;
+}
+function reminderLabel(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function updateReminderButton() {
+  const btn = document.getElementById('reminder');
+  if (!btn) return;
+  btn.classList.toggle('active', !!card.reminderAt);
+  btn.title = card.reminderAt ? `알림: ${reminderLabel(card.reminderAt)}` : '알림 시간 설정';
+}
+
+function appendReminderBar(body) {
+  if (!reminderOpen || !supportsReminder()) return;
+  const bar = document.createElement('div');
+  bar.className = 'rembar';
+  const input = document.createElement('input');
+  input.type = 'datetime-local';
+  input.value = toLocalInputValue(card.reminderAt);
+  const set = document.createElement('button');
+  set.type = 'button'; set.textContent = '설정';
+  const clear = document.createElement('button');
+  clear.type = 'button'; clear.textContent = '해제';
+  const msg = document.createElement('span');
+  msg.className = 'remmsg';
+  msg.textContent = card.reminderAt ? `${reminderLabel(card.reminderAt)} 예정` : '';
+  set.addEventListener('click', async () => {
+    const at = fromLocalInputValue(input.value);
+    if (!at || at <= Date.now()) { msg.textContent = '미래 시간을 선택하세요.'; msg.classList.add('bad'); return; }
+    const r = await window.api.setReminder(ID, at);
+    if (r.ok) {
+      card.reminderAt = r.reminderAt;
+      msg.textContent = `${reminderLabel(card.reminderAt)} 예정`;
+      msg.classList.remove('bad');
+      updateReminderButton();
+    } else {
+      msg.textContent = '설정 실패';
+      msg.classList.add('bad');
+    }
+  });
+  clear.addEventListener('click', async () => {
+    const r = await window.api.setReminder(ID, null);
+    if (r.ok) {
+      card.reminderAt = null;
+      input.value = '';
+      msg.textContent = '';
+      msg.classList.remove('bad');
+      updateReminderButton();
+    }
+  });
+  bar.appendChild(input);
+  bar.appendChild(set);
+  bar.appendChild(clear);
+  bar.appendChild(msg);
+  body.appendChild(bar);
+}
+
+function createFindBar(body) {
+  if (!findOpen || !supportsFind()) return null;
+  const bar = document.createElement('div');
+  bar.className = 'findbar';
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.placeholder = '검색';
+  input.value = findTerm;
+  const prev = document.createElement('button');
+  prev.type = 'button'; prev.textContent = '‹'; prev.title = '이전';
+  const next = document.createElement('button');
+  next.type = 'button'; next.textContent = '›'; next.title = '다음';
+  const status = document.createElement('span');
+  status.className = 'findstatus';
+  const close = document.createElement('button');
+  close.type = 'button'; close.textContent = '×'; close.title = '닫기';
+  close.addEventListener('click', () => {
+    findOpen = false; findTerm = ''; findIndex = 0;
+    const btn = document.getElementById('find'); if (btn) btn.classList.remove('active');
+    if (renderCardBody) renderCardBody();
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close.click(); }
+    if (e.key === 'Enter') { e.preventDefault(); (e.shiftKey ? prev : next).click(); }
+  });
+  bar.appendChild(input);
+  bar.appendChild(prev);
+  bar.appendChild(next);
+  bar.appendChild(status);
+  bar.appendChild(close);
+  body.appendChild(bar);
+  setTimeout(() => { input.focus(); input.select(); }, 0);
+  return { input, prev, next, status };
+}
+
+function lineHeader(line) {
+  return (line && line.header) || String((line && line.text) || '').split(/\r?\n/)[0] || '';
+}
+function lineDetailsText(line) {
+  if (!line) return '';
+  if (Array.isArray(line.details) && line.details.length) {
+    return line.details.map((d) => `${d.label || ''}${d.label ? ': ' : ''}${d.value || ''}`).join('\n');
+  }
+  return String(line.text || '').split(/\r?\n/).slice(1).join('\n');
+}
+function lineDisplayText(line) {
+  const hasDetails = line && ((Array.isArray(line.details) && line.details.length > 1) || String(line.text || '').includes('\n'));
+  return hasDetails ? lineHeader(line) : (line.text || '');
+}
+
 function renderList(body) {
   body.innerHTML = '';
   maskEls.length = 0; // 재렌더 시 표시 요소 레지스트리 초기화
   document.getElementById('fmt').style.display = card.type === 'todo' ? 'none' : ''; // 할일은 복사 서식 불필요
+  appendReminderBar(body);
+  const findCtl = createFindBar(body);
 
   // 복사 서식 편집 박스 (목록형 카드만). 재렌더(옵션 변경 등) 후에도 열림 상태 유지(fmtOpen).
   const fmtbox = document.createElement('div');
@@ -268,10 +493,13 @@ function renderList(body) {
     '<label><input type="checkbox" id="fmtOn"> 복사 시 서식 적용 (내용 앞에 붙음)</label>' +
     '<input class="tpl" id="fmtTpl" placeholder="예: [{날짜단축} {시간}] ">' +
     '<div class="tokens" id="tokchips"></div>' +
-    '<label class="tb">말머리 <select id="hdrSel"></select></label>' +
-    '<label class="tb">화면 말머리 <select id="timeDisp"><option value="off">끔</option><option value="time">시간만</option><option value="datetime">날짜+시간</option></select></label>' +
-    '<label class="tb" title="복사 스탬프의 {시간}/{날짜}가 가리키는 시각. 복사 시점=복사하는 지금, 줄 작성시각=그 줄을 적은 때, 통화 시작=카드 생성 시각.">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="lineTime">줄 작성시각</option><option value="callStart">통화 시작</option></select></label>' +
-    '<label class="tb" title="설정한 기간이 지난 줄은 다음 실행 시 자동으로 삭제됩니다(개인정보 보호). \'안 함\'이면 삭제하지 않습니다.">자동 삭제 <select id="ttlSel"><option value="0">안 함</option><option value="7">7일 후</option><option value="14">14일 후</option><option value="30">30일 후</option><option value="60">60일 후</option><option value="90">90일 후</option></select></label>';
+    '<div class="fmtgrid">' +
+      '<label class="tb">말머리 <select id="hdrSel"></select></label>' +
+      '<label class="tb">화면 말머리 <select id="timeDisp"><option value="off">끔</option><option value="time">시간만</option><option value="datetime">날짜+시간</option></select></label>' +
+      '<label class="tb" title="복사 스탬프의 {시간}/{날짜}가 가리키는 시각. 복사 시점=복사하는 지금, 줄 작성시각=그 줄을 적은 때, 통화 시작=카드 생성 시각.">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="lineTime">줄 작성시각</option><option value="callStart">통화 시작</option></select></label>' +
+      '<label class="tb" title="설정한 기간이 지난 줄은 다음 실행 시 자동으로 삭제됩니다(개인정보 보호). \'안 함\'이면 삭제하지 않습니다.">자동 삭제 <select id="ttlSel"><option value="0">안 함</option><option value="7">7일 후</option><option value="14">14일 후</option><option value="30">30일 후</option><option value="60">60일 후</option><option value="90">90일 후</option></select></label>' +
+    '</div>' +
+    '<div class="fmtfoot"><label class="tb" id="detailsFoldWrap"><input type="checkbox" id="detailsHidden"> 상세는 헤더만 보기</label><button type="button" id="noteImportBtn" class="fmtimport">파일 추가</button></div>';
   body.appendChild(fmtbox);
   const copyOnBox = fmtbox.querySelector('#copyOn');
   const fmtOn = fmtbox.querySelector('#fmtOn');
@@ -323,12 +551,44 @@ function renderList(body) {
     fillHeaderSelect(hdrSel);
     hdrSel.addEventListener('change', () => { card.format.header = hdrSel.value; saveCard({ format: card.format }); });
   }
+  const detailsHidden = fmtbox.querySelector('#detailsHidden');
+  const detailsFoldWrap = fmtbox.querySelector('#detailsFoldWrap');
+  if (detailsHidden && detailsFoldWrap) {
+    detailsFoldWrap.style.display = card.type === 'note' ? '' : 'none';
+    detailsHidden.checked = !!card.detailsHidden;
+    detailsHidden.addEventListener('change', () => {
+      card.detailsHidden = detailsHidden.checked;
+      saveCard({ detailsHidden: card.detailsHidden, lines: card.lines });
+      renderList(body);
+    });
+  }
+  const noteImportBtn = fmtbox.querySelector('#noteImportBtn');
+  if (noteImportBtn) {
+    noteImportBtn.style.display = card.type === 'note' && appStatus.allowNoteFileUpload !== false ? '' : 'none';
+    noteImportBtn.addEventListener('click', async () => {
+      const r = await window.api.pickNoteUpload();
+      if (!r.ok) {
+        noteImportBtn.textContent = r.reason === 'canceled' ? '취소됨' : (r.reason === 'tooManyColumns' ? '1열만 가능' : (r.reason === 'protected' ? '보안문서 차단' : (r.reason === 'disabled' ? '비활성화됨' : '업로드 실패')));
+        setTimeout(() => { noteImportBtn.textContent = '파일 추가'; }, 1200);
+        return;
+      }
+      card.lines = (card.lines || []).concat(r.lines);
+      if (r.hasDetails) card.detailsHidden = true;
+      saveCard({ lines: card.lines, detailsHidden: card.detailsHidden });
+      renderList(body);
+    });
+  }
   document.getElementById('fmt').onclick = () => { fmtOpen = !fmtOpen; fmtbox.hidden = !fmtOpen; };
 
   const list = document.createElement('div');
   list.className = 'list';
   card.lines = card.lines || [];
-  for (const line of card.lines) list.appendChild(makeRow(line));
+  const rowEntries = [];
+  for (const line of card.lines) {
+    const row = makeRow(line);
+    rowEntries.push({ row, line });
+    list.appendChild(row);
+  }
 
   // 유령 빈 줄: 입력 후 Enter=새 줄. 멀티라인 붙여넣기는 Ctrl+클릭 또는 전용 버튼(더블클릭은 '수정' 전용이라 충돌 제거).
   const ghost = document.createElement('div');
@@ -345,9 +605,10 @@ function renderList(body) {
   const addLine = (txt) => {
     const ln = { text: txt };
     if (card.type === 'callmemo' || card.type === 'note') ln.t = Date.now(); // 노트: 줄 작성 시각 기록(화면 말머리·줄 시각 기준용)
-    if (card.type === 'todo') ln.done = false;
+    if (card.type === 'todo') { ln.checkable = true; ln.done = false; }
     card.lines.push(ln);
     list.insertBefore(makeRow(ln), ghost);
+    setSelectedLine(ln);
     persistLines();
   };
   // 클립보드를 줄 단위로 분할해 각 줄을 새 칸으로 추가(줄 trim·빈 줄 제거; PII는 마스킹 안 한 원문 저장 — 화면만 makeRow가 마스킹).
@@ -369,29 +630,63 @@ function renderList(body) {
   ghost.addEventListener('click', (e) => { if ((e.ctrlKey || e.metaKey) && !e.target.closest('.gpaste')) { e.preventDefault(); pasteMulti(); } }); // Ctrl+클릭=붙여넣기
 
   body.appendChild(list);
+  if (findCtl) {
+    const applyListFind = () => {
+      const q = findTerm.trim().toLowerCase();
+      const hits = [];
+      for (const item of rowEntries) {
+        const hit = q && String(item.line.text || '').toLowerCase().includes(q);
+        item.row.hidden = !!q && !hit;
+        item.row.classList.toggle('search-hit', !!hit);
+        item.row.classList.remove('search-active');
+        if (hit) hits.push(item.row);
+      }
+      ghost.hidden = !!q;
+      if (!q) { findCtl.status.textContent = ''; return; }
+      if (!hits.length) { findCtl.status.textContent = '0/0'; return; }
+      if (findIndex >= hits.length) findIndex = 0;
+      if (findIndex < 0) findIndex = hits.length - 1;
+      const active = hits[findIndex];
+      active.classList.add('search-active');
+      active.scrollIntoView({ block: 'nearest' });
+      findCtl.status.textContent = `${findIndex + 1}/${hits.length}`;
+    };
+    findCtl.input.addEventListener('input', () => { findTerm = findCtl.input.value; findIndex = 0; applyListFind(); });
+    findCtl.next.addEventListener('click', () => { findIndex += 1; applyListFind(); });
+    findCtl.prev.addEventListener('click', () => { findIndex -= 1; applyListFind(); });
+    applyListFind();
+  }
 
   if (card.type === 'callmemo' || card.type === 'note') { // ④b 전체(양식) 복사 — 줄 누적 노트
+    const actions = document.createElement('div');
+    actions.className = 'listactions';
     const allBtn = document.createElement('button');
-    allBtn.className = 'allcopy'; allBtn.textContent = '전체 복사(양식)';
+    allBtn.className = 'allcopy'; allBtn.textContent = '전체복사';
     allBtn.addEventListener('click', () => {
       const out = card.lines.map((l) => applyStamp(l.text, card.format, false, l.t)).join('\n');
       window.api.copyText(out);
-      allBtn.textContent = '복사됨 ✓'; setTimeout(() => { allBtn.textContent = '전체 복사(양식)'; }, 1000);
+      allBtn.textContent = '복사됨 ✓'; setTimeout(() => { allBtn.textContent = '전체복사'; }, 1000);
     });
-    body.appendChild(allBtn);
+    actions.appendChild(allBtn);
+    body.appendChild(actions);
   }
 
   const hint = document.createElement('div');
   hint.className = 'hint'; hint.textContent = '줄 클릭=복사 · 더블클릭=수정 · 드래그=선택';
   body.appendChild(hint);
+  updateFormatBarControls();
 }
 
 function renderMemo(body) {
   document.getElementById('fmt').style.display = 'none'; // 메모는 줄복사 없음
   body.innerHTML = '';
   maskEls.length = 0; // 재렌더 시 표시 요소 레지스트리 초기화
+  appendReminderBar(body);
+  const findCtl = createFindBar(body);
   const wrap = document.createElement('div');
   wrap.className = 'memowrap';
+  const toolRows = (reminderOpen && supportsReminder() ? 1 : 0) + (findOpen && supportsFind() ? 1 : 0);
+  if (toolRows) wrap.style.height = `calc(100% - ${toolRows * 36}px)`;
   const ta = document.createElement('textarea');
   ta.className = 'memo'; ta.value = (card.content && card.content.text) || '';
   ta.placeholder = '메모…'; ta.spellcheck = false;
@@ -405,12 +700,44 @@ function renderMemo(body) {
     overlay.style.display = masked ? '' : 'none';
     if (masked) overlay.scrollTop = ta.scrollTop; // 긴 메모: 가린 오버레이를 textarea 스크롤 위치에 맞춤
   };
-  ta.addEventListener('input', () => saveCard({ content: { text: ta.value } }));
+  ta.addEventListener('input', () => {
+    card.content = { text: ta.value };
+    saveCard({ content: card.content });
+  });
   ta.addEventListener('focus', syncOverlay);
   ta.addEventListener('blur', syncOverlay);
   ta.addEventListener('scroll', () => { if (overlay.style.display !== 'none') overlay.scrollTop = ta.scrollTop; }); // 가린 상태 휠 스크롤 동기화(원문 노출 없이 아래 내용 확인)
   wrap.appendChild(ta); wrap.appendChild(overlay);
   body.appendChild(wrap);
+  if (findCtl) {
+    const ranges = () => {
+      const q = findTerm.trim().toLowerCase();
+      if (!q) return [];
+      const text = ta.value.toLowerCase();
+      const out = [];
+      let i = text.indexOf(q);
+      while (i >= 0 && out.length < 500) {
+        out.push([i, i + q.length]);
+        i = text.indexOf(q, i + Math.max(q.length, 1));
+      }
+      return out;
+    };
+    const applyMemoFind = (jump) => {
+      const hits = ranges();
+      if (!findTerm.trim()) { findCtl.status.textContent = ''; return; }
+      if (!hits.length) { findCtl.status.textContent = '0/0'; return; }
+      if (findIndex >= hits.length) findIndex = 0;
+      if (findIndex < 0) findIndex = hits.length - 1;
+      const [s, e] = hits[findIndex];
+      if (jump) ta.focus();
+      ta.setSelectionRange(s, e);
+      findCtl.status.textContent = `${findIndex + 1}/${hits.length}`;
+    };
+    findCtl.input.addEventListener('input', () => { findTerm = findCtl.input.value; findIndex = 0; applyMemoFind(false); });
+    findCtl.next.addEventListener('click', () => { findIndex += 1; applyMemoFind(true); });
+    findCtl.prev.addEventListener('click', () => { findIndex -= 1; applyMemoFind(true); });
+    applyMemoFind(false);
+  }
   maskEls.push({ el: overlay, getRaw: () => ta.value, repaint: syncOverlay }); // 👁 토글·설정 변경 시 refreshMask가 호출
   syncOverlay();
 }
@@ -686,6 +1013,32 @@ function setupBar() {
   });
   title.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); title.blur(); } });
 
+  const findBtn = document.getElementById('find');
+  findBtn.innerHTML = SEARCH_SVG;
+  findBtn.style.display = supportsFind() ? '' : 'none';
+  findBtn.onclick = () => {
+    findOpen = !findOpen;
+    findBtn.classList.toggle('active', findOpen);
+    if (findOpen) findIndex = 0;
+    if (renderCardBody) renderCardBody();
+  };
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || (e.key || '').toLowerCase() !== 'f' || !supportsFind()) return;
+    e.preventDefault();
+    findOpen = true;
+    findBtn.classList.add('active');
+    if (renderCardBody) renderCardBody();
+  });
+
+  const reminder = document.getElementById('reminder');
+  reminder.innerHTML = BELL_SVG;
+  reminder.style.display = supportsReminder() ? '' : 'none';
+  reminder.onclick = () => {
+    reminderOpen = !reminderOpen;
+    if (renderCardBody) renderCardBody();
+  };
+  updateReminderButton();
+
   const pin = document.getElementById('pin');
   pin.innerHTML = PIN_SVG;
   if (card.alwaysOnTop) pin.classList.add('active');
@@ -759,42 +1112,138 @@ function forcePlainPaste(e) {
   document.execCommand('insertText', false, cd.getData('text/plain'));
 }
 
-// ── 카드 배경색 (WM-A 포맷 툴바의 배경색 파트) ──────────────────────────────
-// 배경색 스와치(밝은 톤 — 어두운 글자 가독성 유지). 첫 값 ''=배경 없음(흰색).
-const BG_SWATCHES = ['', '#fffbe6', '#eef4ff', '#eafaf0', '#fdeef2', '#f1ecfb', '#eef0f3'];
-// card.bg를 카드 전체 배경에 적용. 메모는 textarea·오버레이를 같은 불투명색으로(마스킹 무결성 유지).
+function playFlash(count = 1) {
+  if (setCardCollapsed) setCardCollapsed(false);
+  const el = document.documentElement;
+  const flashes = Math.max(1, Math.min(5, Math.floor(Number(count) || 1)));
+  let done = 0;
+  if (flashTimer) clearTimeout(flashTimer);
+  const run = () => {
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+    done += 1;
+    flashTimer = setTimeout(() => {
+      if (done < flashes) run();
+      else {
+        el.classList.remove('flash');
+        flashTimer = null;
+      }
+    }, 700);
+  };
+  run();
+}
+
+// ── 하단 서식 툴바 ──────────────────────────────────────────────────────
+// 배경은 스와치별 본문/헤더 색쌍으로 고정한다. 기존 card.bg(hex)도 같은 본문색이면 자동 매칭.
+const BG_PRESETS = [
+  { key: '', body: '#ffffff', header: '#f3f4f6', border: '#e3e5e8', label: '배경 없음' },
+  { key: 'yellow', body: '#fffbe6', header: '#f2d46b', border: '#ddb94b', label: '노랑' },
+  { key: 'blue', body: '#eef4ff', header: '#c8dcff', border: '#9dbcf4', label: '파랑' },
+  { key: 'green', body: '#eafaf0', header: '#bfe8cc', border: '#91d1a9', label: '초록' },
+  { key: 'rose', body: '#fdeef2', header: '#f4c3d0', border: '#e69caf', label: '분홍' },
+  { key: 'purple', body: '#f1ecfb', header: '#d9cbf3', border: '#bba6e5', label: '보라' },
+  { key: 'gray', body: '#eef0f3', header: '#d3d8df', border: '#bac2cd', label: '회색' },
+];
+function bgPreset() {
+  return BG_PRESETS.find((p) => p.key === (card.bgKey || '')) ||
+    BG_PRESETS.find((p) => p.body.toLowerCase() === String(card.bg || '').toLowerCase()) ||
+    BG_PRESETS[0];
+}
 function applyCardBg() {
-  const bg = card.bg || '#fff';
-  document.body.style.background = bg;
-  document.querySelectorAll('.memo, .memomask').forEach((el) => { el.style.background = bg; });
+  const p = bgPreset();
+  document.body.style.background = p.body;
+  const bar = document.querySelector('.bar');
+  if (bar) {
+    bar.style.background = p.header;
+    bar.style.borderBottomColor = p.border;
+  }
+  document.querySelectorAll('.memo, .memomask').forEach((el) => { el.style.background = p.body; });
 }
 function renderFormatBar() {
   const bar = document.getElementById('wmbar');
   if (!bar) return;
   bar.innerHTML = '';
   bar.hidden = false;
+  const curBg = bgPreset();
+
   const bgGroup = document.createElement('div'); bgGroup.className = 'wmgroup';
   const lbl = document.createElement('span'); lbl.className = 'wmlbl'; lbl.textContent = '배경'; bgGroup.appendChild(lbl);
-  BG_SWATCHES.forEach((c) => {
+  BG_PRESETS.forEach((p) => {
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'sw' + (c ? '' : ' none');
-    if (c) b.style.background = c;
-    b.title = c ? '배경색' : '배경 없음';
-    if ((card.bg || '') === c) b.classList.add('active');
+    b.type = 'button'; b.className = 'sw' + (p.key ? '' : ' none');
+    if (p.key) b.style.background = `linear-gradient(135deg, ${p.header} 0 48%, ${p.body} 52% 100%)`;
+    b.title = p.label;
+    if (curBg.key === p.key) b.classList.add('active');
     b.addEventListener('click', () => {
-      card.bg = c || undefined; saveCard({ bg: card.bg }); applyCardBg();
+      card.bgKey = p.key || undefined;
+      card.bg = p.key ? p.body : undefined;
+      saveCard({ bgKey: card.bgKey, bg: card.bg });
+      applyCardBg();
       bgGroup.querySelectorAll('.sw').forEach((s) => s.classList.remove('active')); b.classList.add('active');
     });
     bgGroup.appendChild(b);
   });
   bar.appendChild(bgGroup);
+
+  if (supportsLineFormatting()) {
+    const textGroup = document.createElement('div'); textGroup.className = 'wmgroup';
+    const textLbl = document.createElement('span'); textLbl.className = 'wmlbl'; textLbl.textContent = '글자'; textGroup.appendChild(textLbl);
+    [
+      { key: 'bold', label: 'B', title: '선택한 줄 굵게' },
+      { key: 'strike', label: 'S', title: '선택한 줄 취소선' },
+    ].forEach((item) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'toolbtn'; b.textContent = item.label; b.title = item.title;
+      b.dataset.lineStyle = item.key;
+      b.addEventListener('click', () => {
+        if (!selectedLine) return;
+        selectedLine[item.key] = !selectedLine[item.key];
+        persistLines();
+        updateFormatBarControls();
+        if (renderCardBody) renderCardBody();
+      });
+      textGroup.appendChild(b);
+    });
+    bar.appendChild(textGroup);
+  }
+
+  if (supportsChecklistMode()) {
+    const checkGroup = document.createElement('div'); checkGroup.className = 'wmgroup';
+    const checkLbl = document.createElement('span'); checkLbl.className = 'wmlbl'; checkLbl.textContent = '체크리스트'; checkGroup.appendChild(checkLbl);
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'toolbtn wide'; b.textContent = '☑'; b.title = '선택한 줄 체크리스트';
+    b.dataset.lineCheck = 'true';
+    b.addEventListener('click', () => {
+      if (!selectedLine) return;
+      selectedLine.checkable = !selectedLine.checkable;
+      if (!selectedLine.checkable) selectedLine.done = false;
+      else if (selectedLine.done == null) selectedLine.done = false;
+      persistLines();
+      updateFormatBarControls();
+      if (renderCardBody) renderCardBody();
+    });
+    checkGroup.appendChild(b);
+    bar.appendChild(checkGroup);
+  }
+  updateFormatBarControls();
 }
 
 async function init() {
   card = await window.api.getCard(ID);
   settings = await window.api.getSettings();
+  try { appStatus = await window.api.status(); } catch (_) {}
   try { env = await window.api.getEnv(); } catch (_) {} // 워터마크용 PC명
   if (!card) { document.body.innerHTML = '<div class="hint">카드를 찾을 수 없습니다.</div>'; return; }
+  normalizeCardForRender();
+  if ((card.type === 'todo' || card.checklistMode) && Array.isArray(card.lines)) {
+    let changed = false;
+    card.lines.forEach((line) => {
+      if (line && !line.checkable) { line.checkable = true; changed = true; }
+    });
+    if (card.checklistMode) { card.checklistMode = false; changed = true; }
+    if (changed) window.api.updateCard(ID, { checklistMode: false, lines: card.lines });
+  }
   // 레거시 콜메모 마이그레이션: timeDisplay 없는 카드의 화면/복사 시각 불일치 방지.
   if (card.type === 'callmemo' && !card.timeDisplay) {
     const tpl = (card.format && card.format.template) || '';
@@ -817,11 +1266,11 @@ async function init() {
     if (Object.keys(patch).length) window.api.updateCard(ID, patch);
   }
   document.addEventListener('paste', forcePlainPaste, true); // 붙여넣기 평문 통일(링크 앵커 텍스트가 아닌 URL 원본)
-  if (window.api.onFlash) window.api.onFlash(() => { // 패널 더블클릭 신호: 접혀있으면 펼치기 + 흔들기/테두리 플래시
-    if (setCardCollapsed) setCardCollapsed(false); // item 1: 접힌 카드도 펼쳐서 바로 보이게
-    const el = document.documentElement;
-    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); // 리플로우로 애니메이션 재시작
-    setTimeout(() => el.classList.remove('flash'), 700);
+  if (window.api.onFlash) window.api.onFlash((count) => playFlash(count)); // 패널/알림 신호: 접힌 카드도 펼치고 흔들기
+  if (window.api.onReminderFired) window.api.onReminderFired(() => {
+    card.reminderAt = null;
+    updateReminderButton();
+    if (reminderOpen && renderCardBody) renderCardBody();
   });
   // 패널에서 설정이 바뀌면(사용자ID 적용·개인정보 가리기 토글) 캐시를 갱신해 복사 서식/마스킹에 즉시 반영.
   if (window.api.onSettingsChanged) window.api.onSettingsChanged((s) => {
@@ -831,10 +1280,14 @@ async function init() {
     }
   });
   setupBar();
-  const body = document.getElementById('body');
-  if (card.type === 'memo') renderMemo(body);
-  else if (card.type === 'table') renderTable(body);
-  else renderList(body);
+  renderCardBody = () => {
+    const body = document.getElementById('body');
+    if (card.type === 'memo') renderMemo(body);
+    else if (card.type === 'table') renderTable(body);
+    else renderList(body);
+    applyCardBg();
+  };
+  renderCardBody();
   renderFormatBar(); // 하단 배경색 바 — #body 재렌더와 무관하게 유지
   applyCardBg();     // 저장된 배경색 적용(메모 textarea/오버레이 포함)
 }

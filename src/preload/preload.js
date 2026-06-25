@@ -32,7 +32,10 @@ contextBridge.exposeInMainWorld('api', {
   exportData: (pass) => ipcRenderer.invoke('data:export', pass),
   importData: (pass) => ipcRenderer.invoke('data:import', pass),
   piiScan: () => ipcRenderer.invoke('data:piiScan'),
-  onFlash: (cb) => ipcRenderer.on('card:flash', () => cb()), // 카드 렌더러: 패널 더블클릭 신호 수신
+  pickNoteUpload: () => ipcRenderer.invoke('note:pickUpload'),
+  setReminder: (id, at) => ipcRenderer.invoke('card:setReminder', id, at),
+  onFlash: (cb) => ipcRenderer.on('card:flash', (_e, count) => cb(count)), // 카드 렌더러: 패널 더블클릭 신호 수신
+  onReminderFired: (cb) => ipcRenderer.on('reminder:fired', () => cb()),
   search: (q) => ipcRenderer.invoke('search', q),
   // 패널 헤더 제어(프레임리스)
   panelPin: () => ipcRenderer.invoke('panel:pin'),
@@ -46,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
   // 패널
   listCards: () => ipcRenderer.invoke('panel:listCards'),
   createCard: (type, section) => ipcRenderer.invoke('panel:createCard', type, section),
+  createNoteFromUpload: (section) => ipcRenderer.invoke('panel:createNoteFromUpload', section),
   focusCard: (id) => ipcRenderer.invoke('panel:focusCard', id),
   flashCard: (id) => ipcRenderer.invoke('panel:flashCard', id),
   showAll: () => ipcRenderer.invoke('panel:showAll'),

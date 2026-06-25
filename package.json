@@ -45,5 +45,8 @@
   "devDependencies": {
     "electron": "^42.4.1",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "read-excel-file": "^9.2.0"
   }
 }

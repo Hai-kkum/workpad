@@ -180,6 +180,7 @@ async function doSearch(q) {
       `<span class="ct">${escapeHtml(r.title)}</span></div>` +
       `<div class="snip">${escapeHtml(r.snippet)}</div>`;
     d.addEventListener('click', () => window.api.focusCard(r.id));
+    d.addEventListener('dblclick', () => window.api.flashCard(r.id));
     el.appendChild(d);
   }
 }
@@ -245,6 +246,10 @@ async function refreshStatus() {
   } else {
     $('#xferBtns').style.display = '';
   }
+  if ($('#uploadNote')) {
+    $('#uploadNote').style.display = s.allowNoteFileUpload === false ? 'none' : '';
+    if (s.allowNoteFileUpload === false) uploadMsg('파일 업로드는 관리자(보안)에 의해 비활성화되어 있습니다.', null);
+  }
   const note = $('#loadnote');
   if (s.loadError) {
     note.textContent = '이전 데이터를 열지 못해 백업하고 새로 시작했습니다' + (s.loadError.backup ? ` (백업: ${s.loadError.backup})` : '') + '.';
@@ -266,6 +271,11 @@ function toggleFold() {
 // ── 데이터 백업/이전(암호 보호) ──
 function xferMsg(text, ok) {
   const h = $('#xferHint'); h.textContent = text;
+  h.style.color = ok === false ? '#c0392b' : (ok === true ? '#15803d' : '#9aa1ab');
+}
+function uploadMsg(text, ok) {
+  const h = $('#uploadHint'); if (!h) return;
+  h.textContent = text;
   h.style.color = ok === false ? '#c0392b' : (ok === true ? '#15803d' : '#9aa1ab');
 }
 function exportForm() {
@@ -388,6 +398,22 @@ function wire() {
       await refreshCards(); await refreshStatus();
     };
   });
+  $('#uploadNote').onclick = async () => {
+    const sect = (activeTab === '전체') ? '공통' : activeTab;
+    uploadMsg('파일을 선택하는 중…', null);
+    const r = await window.api.createNoteFromUpload(sect);
+    if (r.ok) {
+      uploadMsg(`업로드 완료: ${r.count}줄`, true);
+      await refreshCards(); await refreshStatus();
+    } else if (r.reason === 'canceled') uploadMsg('업로드 취소됨.', null);
+    else if (r.reason === 'disabled') uploadMsg('관리자(보안)에 의해 업로드가 비활성화되어 있습니다.', false);
+    else if (r.reason === 'empty') uploadMsg('가져올 내용이 없습니다.', false);
+    else if (r.reason === 'tooManyColumns') uploadMsg('업로드는 1열만 가능합니다. 2열 이상은 표 기능에서 지원 예정입니다.', false);
+    else if (r.reason === 'protected') uploadMsg('보안/암호화 문서는 업로드할 수 없습니다.', false);
+    else if (r.reason === 'excel') uploadMsg('엑셀 파일을 읽지 못했습니다. .xlsx 형식인지 확인하세요.', false);
+    else if (r.reason === 'unsupported') uploadMsg('지원 형식은 .xlsx/.csv/.tsv/.txt 입니다.', false);
+    else uploadMsg('업로드 실패. 엑셀/CSV/TXT 형식을 확인하세요.', false);
+  };
   $('#toggleAll').onclick = async () => {
     if (allCards.some((c) => c.visible)) { await window.api.hideAll(); }
     else { activeTab = '전체'; refreshTabs(); await window.api.showAll(); } // 전체 표시는 전체 탭으로(목록/화면 일치)

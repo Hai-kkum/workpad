@@ -56,10 +56,20 @@ body.collapsed .content { display: none; }
 .mini button { font-size: 11px; padding: 2px 8px; color: #6b7280; border-color: #e7e9ec; }
 .mini .vistoggle { display: inline-flex; align-items: center; gap: 4px; }
 .mini .vistoggle svg { width: 12px; height: 12px; flex: 0 0 auto; }
-.btns.add { margin-bottom: 8px; }
+.addline { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.primary-add { flex: 1 1 auto; }
 /* 카드 추가 = 패널의 주 동작 → 약간의 강조(주 버튼) */
 .btns.add button { font-weight: 500; }
 .btns.add button:hover { border-color: #2563eb; color: #1d4ed8; background: #f5f8ff; }
+.uploadbtn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  border-style: dashed;
+  color: #6b7280;
+  background: #fafafa;
+}
+.uploadbtn:hover { border-color: #9ca3af; color: #374151; background: #f3f4f6; }
+.uploadhint { min-height: 14px; margin: -3px 0 5px; }
 
 /* 설정 · 백업 접기(기본 닫힘) — 클릭 가능한 헤더로 명확히(C) */
 .disc { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; padding: 9px 12px; margin: 0 -12px; border-radius: 6px; }

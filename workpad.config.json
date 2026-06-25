@@ -1,4 +1,5 @@
 {
-  "_comment": "배포용 설정 파일(보안팀 제어). allowDataTransfer 를 false 로 두고 배포하면 데이터 내보내기/가져오기(백업·PC 이전) 기능이 비활성화됩니다(UI 숨김 + 내부 IPC 거부). 사용자는 앱 내에서 다시 켤 수 없습니다.",
-  "allowDataTransfer": true
+  "_comment": "배포용 설정 파일(보안팀 제어). allowDataTransfer=false 는 백업/복원/노트 파일 업로드를 모두 차단합니다. allowNoteFileUpload=false 는 백업/복원은 유지하고 노트 파일 업로드만 차단합니다. 사용자는 앱 내에서 다시 켤 수 없습니다.",
+  "allowDataTransfer": true,
+  "allowNoteFileUpload": true
 }

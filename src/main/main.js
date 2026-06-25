@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
+const readXlsxFile = require('read-excel-file/node');
 const store = require('./store');
 const { maskPII, hasPII } = require('../shared/pii'); // 검색 스니펫 마스킹(SE-6) + 백업 PII 검출
 
@@ -31,9 +32,12 @@ let panelWin = null;   // 컨트롤 패널
 let booted = false;    // boot() 1회만(재진입·중복 IPC 등록 방지)
 const cards = new Map(); // id -> BrowserWindow
 const cardOwners = new Map(); // id -> 카드별 숨은 owner 창. 카드마다 개별 owner라야 클릭 시 그 카드만 앞으로 옴(공유 owner면 그룹 전체가 올라옴).
+const reminderTimers = new Map(); // id -> setTimeout handle
 
-// 배포용 설정(보안팀 제어). 앱 폴더의 workpad.config.json. allowDataTransfer=false면 내보내기/가져오기 차단.
-let appConfig = { allowDataTransfer: true };
+// 배포용 설정(보안팀 제어). 앱 폴더의 workpad.config.json.
+// allowDataTransfer=false면 백업/복원/노트 파일 업로드를 모두 차단하고,
+// allowNoteFileUpload=false면 백업/복원은 두되 노트 파일 업로드만 차단한다.
+let appConfig = { allowDataTransfer: true, allowNoteFileUpload: true };
 function loadConfig() {
   try {
     const p = path.join(app.getAppPath(), 'workpad.config.json');
@@ -76,6 +80,180 @@ function scanPII(state) {
     if (Array.isArray(c.rows)) c.rows.forEach((r) => { if (Array.isArray(r)) r.forEach((cell) => check(cell, c.id)); });
   }
   return { count, cards: hitCards.size };
+}
+
+function formatUploadDate(d) {
+  const pad2 = (n) => String(n).padStart(2, '0');
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+  const date = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  const hasTime = d.getHours() || d.getMinutes() || d.getSeconds();
+  return hasTime ? `${date} ${pad2(d.getHours())}:${pad2(d.getMinutes())}` : date;
+}
+
+function cleanUploadCell(v) {
+  if (v == null) return '';
+  if (v instanceof Date) return formatUploadDate(v);
+  if (typeof v === 'object') {
+    if (v.text != null) return cleanUploadCell(v.text);
+    if (v.result != null) return cleanUploadCell(v.result);
+    if (Array.isArray(v.richText)) return v.richText.map((part) => cleanUploadCell(part && part.text)).join('').trim();
+    if (v.hyperlink && v.text) return cleanUploadCell(v.text);
+  }
+  return String(v).replace(/\r\n/g, '\n').replace(/\u00a0/g, ' ').trim();
+}
+
+function parseDelimitedText(text, sep) {
+  const rows = [];
+  let row = [], cell = '', quoted = false;
+  const src = text.replace(/^\uFEFF/, '');
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '"') {
+      if (quoted && src[i + 1] === '"') { cell += '"'; i++; }
+      else quoted = !quoted;
+    } else if (!quoted && ch === sep) {
+      row.push(cleanUploadCell(cell)); cell = '';
+    } else if (!quoted && (ch === '\n' || ch === '\r')) {
+      if (ch === '\r' && src[i + 1] === '\n') i++;
+      row.push(cleanUploadCell(cell)); rows.push(row); row = []; cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+  row.push(cleanUploadCell(cell));
+  rows.push(row);
+  return rows;
+}
+
+function normalizeXlsxRows(rows) {
+  if (!Array.isArray(rows)) return [];
+  const sheetRows = rows
+    .filter((sheet) => sheet && typeof sheet === 'object' && !Array.isArray(sheet) && Array.isArray(sheet.data))
+    .map((sheet) => sheet.data);
+  if (sheetRows.length) {
+    return sheetRows.find((data) => data.some((row) => Array.isArray(row) && row.some((cell) => cleanUploadCell(cell)))) || sheetRows[0];
+  }
+  return rows;
+}
+
+function noteFileUploadAllowed() {
+  return appConfig.allowDataTransfer !== false && appConfig.allowNoteFileUpload !== false;
+}
+
+function uploadError(code) {
+  const e = new Error(code);
+  e.code = code;
+  return e;
+}
+
+function readFileHead(filePath, bytes = 4096) {
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(bytes);
+    const len = fs.readSync(fd, buf, 0, bytes, 0);
+    return buf.subarray(0, len);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function isOleCompound(buf) {
+  return buf.length >= 8 &&
+    buf[0] === 0xD0 && buf[1] === 0xCF && buf[2] === 0x11 && buf[3] === 0xE0 &&
+    buf[4] === 0xA1 && buf[5] === 0xB1 && buf[6] === 0x1A && buf[7] === 0xE1;
+}
+
+function isZipPackage(buf) {
+  return buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4B &&
+    ((buf[2] === 0x03 && buf[3] === 0x04) || (buf[2] === 0x05 && buf[3] === 0x06) || (buf[2] === 0x07 && buf[3] === 0x08));
+}
+
+function hasNulByte(buf) {
+  for (const b of buf) if (b === 0) return true;
+  return false;
+}
+
+function assertUploadFileAllowed(filePath) {
+  if (!noteFileUploadAllowed()) throw uploadError('disabled');
+  const ext = path.extname(filePath).toLowerCase();
+  const supported = new Set(['.xlsx', '.csv', '.tsv', '.txt']);
+  if (!supported.has(ext)) throw uploadError('unsupported');
+  const st = fs.statSync(filePath);
+  if (!st.isFile()) throw uploadError('unsupported');
+  const head = readFileHead(filePath);
+
+  // 암호화 Office 파일은 .xlsx 확장자여도 ZIP이 아니라 OLE Compound(EncryptedPackage)로 보인다.
+  // DRM 클라이언트가 평문을 투명 제공하는 경우까지 앱이 완전히 식별할 수는 없으므로, 보안 배포에서는 allowNoteFileUpload=false를 사용한다.
+  if (ext === '.xlsx') {
+    if (isOleCompound(head)) throw uploadError('protected');
+    if (!isZipPackage(head)) throw uploadError('excel');
+    return;
+  }
+
+  // 텍스트 업로드에 Office/ZIP/바이너리가 위장되어 들어오는 것은 보안문서/비지원 파일로 차단한다.
+  if (isOleCompound(head) || isZipPackage(head) || hasNulByte(head)) throw uploadError('protected');
+}
+
+async function readUploadRows(filePath) {
+  assertUploadFileAllowed(filePath);
+  const ext = path.extname(filePath).toLowerCase();
+  const textExts = new Set(['.txt', '.csv', '.tsv']);
+  if (textExts.has(ext)) {
+    const text = fs.readFileSync(filePath, 'utf8');
+    if (ext === '.txt') return text.replace(/^\uFEFF/, '').split(/\r?\n/).map((line) => [cleanUploadCell(line)]);
+    return parseDelimitedText(text, ext === '.tsv' ? '\t' : ',');
+  }
+  if (ext === '.xlsx') {
+    try {
+      const rows = await readXlsxFile(filePath);
+      return normalizeXlsxRows(rows).map((row) => (Array.isArray(row) ? row : [row]).map(cleanUploadCell));
+    } catch (e) {
+      e.code = 'excel';
+      throw e;
+    }
+  }
+  const e = new Error('unsupported upload file');
+  e.code = 'unsupported';
+  throw e;
+}
+
+function rowsToNoteLines(rows) {
+  const cleanRows = rows
+    .map((row) => (Array.isArray(row) ? row : [row]).map(cleanUploadCell))
+    .filter((row) => row.some(Boolean));
+  if (!cleanRows.length) return { lines: [], reason: 'empty' };
+  if (cleanRows.some((row) => row.filter(Boolean).length > 1)) return { lines: [], reason: 'tooManyColumns' };
+
+  const now = Date.now();
+  const lines = cleanRows
+    .map((row) => row.find(Boolean))
+    .filter(Boolean)
+    .map((text) => ({ text, t: now }));
+  return lines.length ? { lines, reason: null } : { lines: [], reason: 'empty' };
+}
+
+async function parseNoteUpload(filePath) {
+  const rows = await readUploadRows(filePath);
+  const converted = rowsToNoteLines(rows);
+  const lines = converted.lines || [];
+  if (!lines.length) return { ok: false, reason: converted.reason || 'empty', rowCount: converted.rowCount || 0 };
+  const title = path.basename(filePath, path.extname(filePath)) || '업로드 노트';
+  return { ok: true, title, lines, count: lines.length, hasDetails: lines.some((line) => (Array.isArray(line.details) && line.details.length > 1) || String(line.text || '').includes('\n')) };
+}
+
+async function pickNoteUpload(owner) {
+  if (!noteFileUploadAllowed()) return { ok: false, reason: 'disabled' };
+  const res = await dialog.showOpenDialog(owner || panelWin, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Excel Workbook (*.xlsx)', extensions: ['xlsx'] },
+      { name: 'Text (*.csv, *.tsv, *.txt)', extensions: ['csv', 'tsv', 'txt'] },
+      { name: 'Supported Uploads', extensions: ['xlsx', 'csv', 'tsv', 'txt'] },
+    ],
+  });
+  if (res.canceled || !res.filePaths || !res.filePaths[0]) return { ok: false, reason: 'canceled' };
+  try { return await parseNoteUpload(res.filePaths[0]); }
+  catch (e) { logf('note upload error: ' + (e && e.stack || e)); return { ok: false, reason: (e && e.code) || 'parse' }; }
 }
 
 // 가져오기 후 카드 창 전체 재생성
@@ -222,6 +400,55 @@ function notifyCardsSettings() {
   for (const [, win] of cards) { if (!win.isDestroyed()) win.webContents.send('settings:changed', s); }
 }
 
+function focusAndFlashCard(id, flashes = 1) {
+  const win = cards.get(id);
+  if (!win || win.isDestroyed()) return false;
+  try { if (win.isMinimized && win.isMinimized()) win.restore(); } catch (_) {}
+  store.setVisible(id, true);
+  win.show();
+  win.focus();
+  const count = Math.max(1, Math.min(5, Math.floor(Number(flashes) || 1)));
+  win.webContents.send('card:flash', count);
+  notifyPanel();
+  return true;
+}
+
+function clearReminderTimer(id) {
+  const t = reminderTimers.get(id);
+  if (t) clearTimeout(t);
+  reminderTimers.delete(id);
+}
+
+function fireReminder(id) {
+  clearReminderTimer(id);
+  const c = store.getCard(id);
+  if (!c) return;
+  store.updateCard(id, { reminderAt: null });
+  focusAndFlashCard(id, 2);
+  const win = cards.get(id);
+  if (win && !win.isDestroyed()) win.webContents.send('reminder:fired');
+}
+
+function scheduleReminder(card) {
+  if (!card || !card.id) return;
+  clearReminderTimer(card.id);
+  const at = Number(card.reminderAt);
+  if (!Number.isFinite(at) || at <= 0) return;
+  const MAX_DELAY = 2147483647;
+  const delay = Math.max(0, Math.min(at - Date.now(), MAX_DELAY));
+  const timer = setTimeout(() => {
+    const latest = store.getCard(card.id);
+    if (!latest || Number(latest.reminderAt) !== at) return;
+    if (Date.now() >= at) fireReminder(card.id);
+    else scheduleReminder(latest);
+  }, delay);
+  reminderTimers.set(card.id, timer);
+}
+
+function scheduleAllReminders() {
+  for (const c of Object.values(store.getState().cards)) scheduleReminder(c);
+}
+
 // 종료 시 모든 카드 창의 현재 크기·위치를 즉시 저장 — 리사이즈 디바운스(250ms)가 못 따라잡고 앱이 닫혀 크기가 안 남는 문제 방지.
 function saveAllBounds() {
   for (const [id, win] of cards) {
@@ -271,6 +498,7 @@ function registerIpc() {
     const c = store.updateCard(id, patch);
     const win = cards.get(id);
     if (win && !win.isDestroyed() && Object.prototype.hasOwnProperty.call(patch, 'alwaysOnTop')) win.setAlwaysOnTop(!!patch.alwaysOnTop);
+    if (c && Object.prototype.hasOwnProperty.call(patch, 'reminderAt')) scheduleReminder(c);
     return c;
   });
   ipcMain.handle('card:collapse', (_e, id, collapsed) => {
@@ -289,6 +517,7 @@ function registerIpc() {
   });
   ipcMain.handle('card:close', (_e, id) => { // 영구 삭제(패널의 휴지통에서 확인 후 호출)
     const win = cards.get(id);
+    clearReminderTimer(id);
     store.removeCard(id);
     if (win && !win.isDestroyed()) win.close();
   });
@@ -329,6 +558,16 @@ function registerIpc() {
   ipcMain.handle('clipboard:read', () => clipboard.readText());
   ipcMain.handle('clipboard:readHTML', () => clipboard.readHTML()); // 엑셀/CRM 표는 HTML(table)로도 올라옴 — 차원 정확
 
+  ipcMain.handle('note:pickUpload', async (e) => pickNoteUpload(BrowserWindow.fromWebContents(e.sender) || panelWin));
+  ipcMain.handle('card:setReminder', (_e, id, at) => {
+    const ts = at == null || at === '' ? null : Number(at);
+    if (ts != null && (!Number.isFinite(ts) || ts <= 0)) return { ok: false, reason: 'badtime' };
+    const c = store.updateCard(id, { reminderAt: ts });
+    if (!c) return { ok: false, reason: 'notfound' };
+    scheduleReminder(c);
+    return { ok: true, reminderAt: c.reminderAt || null };
+  });
+
   ipcMain.handle('settings:get', () => store.getSettings());
   ipcMain.handle('settings:update', (_e, patch) => {
     const s = store.updateSettings(patch);
@@ -336,7 +575,14 @@ function registerIpc() {
     notifyCardsSettings(); // 변경된 설정을 열린 카드에 즉시 반영(사용자ID·마스킹)
     return s;
   });
-  ipcMain.handle('app:status', () => ({ keyProtected: store.isKeyProtected(), keyMode: store.getKeyMode(), cardCount: cards.size, loadError: store.getLoadError(), allowDataTransfer: appConfig.allowDataTransfer !== false }));
+  ipcMain.handle('app:status', () => ({
+    keyProtected: store.isKeyProtected(),
+    keyMode: store.getKeyMode(),
+    cardCount: cards.size,
+    loadError: store.getLoadError(),
+    allowDataTransfer: appConfig.allowDataTransfer !== false,
+    allowNoteFileUpload: noteFileUploadAllowed(),
+  }));
   // 비밀번호 잠금(SE-9) 관리 — 패널 창에서만 호출(발신자 검증, Codex P2). 비밀번호 = 숫자 6자리. 분실 시 복구불가(설계상).
   const PIN = /^\d{6}$/;
   ipcMain.handle('lock:status', (e) => (isFrom(e, panelWin) ? { mode: store.getKeyMode() } : { mode: null }));
@@ -377,7 +623,9 @@ function registerIpc() {
     catch (e) { return { ok: false, reason: 'decrypt' }; } // 암호 틀림 또는 손상/형식 아님
     if (!bundle || typeof bundle !== 'object' || typeof bundle.cards !== 'object') return { ok: false, reason: 'format' };
     store.replaceState(bundle);
+    for (const id of reminderTimers.keys()) clearReminderTimer(id);
     reloadAllCards();
+    scheduleAllReminders();
     notifyPanel();
     return { ok: true, count: Object.keys(store.getState().cards).length };
   });
@@ -439,13 +687,24 @@ function registerIpc() {
     win.once('show', () => { try { win.focus(); } catch (_) {} }); // 새로 만든 카드는 바로 포커스 → 생성 직후 붙여넣기/입력 즉시 가능
     return card.id;
   });
+  ipcMain.handle('panel:createNoteFromUpload', async (_e, section) => {
+    const parsed = await pickNoteUpload(panelWin);
+    if (!parsed.ok) return parsed;
+    const card = defaultCard('note', section);
+    card.title = parsed.title || '업로드 노트';
+    card.lines = parsed.lines;
+    card.detailsHidden = !!parsed.hasDetails;
+    store.addCard(card);
+    const win = createCardWindow(card, true);
+    win.once('show', () => { try { win.focus(); } catch (_) {} });
+    return { ok: true, id: card.id, count: parsed.count };
+  });
   ipcMain.handle('panel:focusCard', (_e, id) => {
     const win = cards.get(id);
     if (win && !win.isDestroyed()) { store.setVisible(id, true); win.show(); win.focus(); notifyPanel(); }
   });
   ipcMain.handle('panel:flashCard', (_e, id) => { // 패널 더블클릭 → 해당 카드 창 앞으로 + 흔들기/플래시 신호
-    const win = cards.get(id);
-    if (win && !win.isDestroyed()) { store.setVisible(id, true); win.show(); win.focus(); win.webContents.send('card:flash'); notifyPanel(); }
+    focusAndFlashCard(id);
   });
   ipcMain.handle('panel:showAll', () => { for (const [id, win] of cards) if (!win.isDestroyed()) { win.show(); store.setVisible(id, true); } notifyPanel(); });
   ipcMain.handle('panel:hideAll', () => { for (const [id, win] of cards) if (!win.isDestroyed()) { win.hide(); store.setVisible(id, false); } notifyPanel(); });
@@ -506,6 +765,7 @@ function boot() {
   } else {
     for (const c of saved) createCardWindow(c, c.visible !== false);
   }
+  scheduleAllReminders();
   applyHotkey(store.getSettings().hotkeyHideAll);
   logf('startup complete, windows=' + (cards.size + 1));
 }

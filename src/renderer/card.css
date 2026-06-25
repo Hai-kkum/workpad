@@ -52,11 +52,20 @@ body {
 .wmbar[hidden] { display: none; }
 .collapsed .wmbar { display: none; }
 .wmbar .wmgroup { display: flex; align-items: center; gap: 4px; }
+.wmbar .wmgroup + .wmgroup { border-left: 1px solid #e8ebef; padding-left: 10px; }
 .wmbar .wmlbl { font-size: 11px; color: #9aa1ab; margin-right: 1px; }
 .wmbar .sw { width: 16px; height: 16px; border-radius: 50%; border: 1px solid #cdd2d9; cursor: pointer; padding: 0; position: relative; }
 .wmbar .sw.none { background: #fff; }
 .wmbar .sw.none::after { content: '✕'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #b6bcc5; }
 .wmbar .sw.active { outline: 2px solid #2563eb; outline-offset: 1px; border-color: #2563eb; }
+.wmbar .toolbtn {
+  min-width: 22px; height: 22px; border: 1px solid #d7dbe0; background: #fff; color: #374151;
+  border-radius: 5px; font-size: 12px; line-height: 1; padding: 0 6px; cursor: pointer; font-weight: 600;
+}
+.wmbar .toolbtn.wide { min-width: 28px; }
+.wmbar .toolbtn:hover:not(:disabled) { background: #f3f4f6; }
+.wmbar .toolbtn.active { border-color: #2563eb; background: #dbeafe; color: #1d4ed8; }
+.wmbar .toolbtn:disabled { opacity: .45; cursor: default; }
 
 /* 메모(자유 텍스트) — 마스킹 오버레이용 래퍼. display:block 으로 inline baseline 여백 제거(스크롤바 이중 표시 방지) */
 .memowrap { position: relative; width: 100%; height: 100%; }
@@ -81,11 +90,23 @@ body {
   padding: 5px 8px; border-bottom: 1px solid #f1f2f4;
 }
 .row:hover { background: #f7f9fc; }
+.row.selected { box-shadow: inset 3px 0 0 #2563eb; background: #f7faff; }
 .row .time {
   flex: 0 0 auto; font: 11px/1.55 ui-monospace, Consolas, monospace; color: #9aa1ab; padding-top: 1px; user-select: none;
 }
+.row .linecontent { flex: 1; min-width: 0; display: block; }
 .row .text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; outline: none; }
+.row .linecontent .text { display: block; }
 .row .text[contenteditable="true"] { background: #fffbe6; border-radius: 3px; padding: 0 2px; }
+.detailtoggle {
+  flex: 0 0 auto; border: 0; background: transparent; color: #8a909a; cursor: pointer;
+  width: 16px; height: 20px; line-height: 18px; padding: 0; border-radius: 4px; margin-top: 1px;
+}
+.detailtoggle:hover { background: #e5e7eb; color: #111; }
+.linedetails {
+  display: block; margin-top: 3px; padding-left: 8px; border-left: 2px solid #e3e5e8;
+  color: #6b7280; font-size: 12px; white-space: pre-wrap; word-break: break-word;
+}
 .row .copy {
   flex: 0 0 auto; visibility: hidden; border: 0; background: transparent; color: #9aa1ab;
   cursor: pointer; padding: 1px 2px; display: inline-flex; align-items: center;
@@ -94,8 +115,12 @@ body {
 .row .copy:hover { color: #2563eb; }
 .row.copied { background: #eafaf0; }
 .row.copied .copy { visibility: visible; color: #16a34a; }
+.row.search-hit { background: #fffbe6; }
+.row.search-active { box-shadow: inset 3px 0 0 #2563eb; }
 .todochk { flex: 0 0 auto; margin: 3px 2px 0 0; cursor: pointer; } /* 할일 체크박스 */
-.row.done .text { text-decoration: line-through; color: #9aa1ab; }
+.row.bold .text { font-weight: 700; }
+.row.strike .text, .row.done .text { text-decoration: line-through; }
+.row.done .text { color: #9aa1ab; }
 
 .ghost .text:empty:before { content: attr(data-ph); color: #b6bcc5; }
 .ghost .gpaste {
@@ -105,9 +130,9 @@ body {
 .ghost .gpaste:hover { background: #e5e7eb; color: #2563eb; }
 
 /* 마스킹된(가려진) 값: 모노폰트 + 옅은 음영으로 "가려진 상태"임을 시각화. 클릭복사=원문은 그대로. */
-.row .text.masked, .tbl td.masked { font-family: ui-monospace, Consolas, monospace; background: #f3f4f6; color: #5b6470; }
+.row .text.masked, .linedetails.masked, .tbl td.masked { font-family: ui-monospace, Consolas, monospace; background: #f3f4f6; color: #5b6470; }
 .tbl td.masked { background: #f3f4f6; }
-.row.revealed .text.masked, .tbl td.masked.revealed { background: #fff7ed; color: #1f2328; }
+.row.revealed .text.masked, .linedetails.masked.revealed, .tbl td.masked.revealed { background: #fff7ed; color: #1f2328; }
 
 .hint { padding: 6px 8px; font-size: 11px; color: #9aa1ab; }
 .hint .tundo { -webkit-app-region: no-drag; margin-left: 2px; border: 1px solid #d7dbe0; background: #fff; border-radius: 4px; color: #2563eb; font-size: 11px; padding: 1px 7px; cursor: pointer; }
@@ -168,7 +193,40 @@ body.tedit .tbl td { cursor: text; }                  /* 편집 모드 = 칸이 
 .fmtbox .tklbl { font-size: 11px; margin-right: 2px; }
 .fmtbox .tok { -webkit-app-region: no-drag; border: 1px solid #d7dbe0; background: #fff; border-radius: 10px; font-size: 11px; padding: 1px 7px; cursor: pointer; color: #374151; font-family: ui-monospace, Consolas, monospace; }
 .fmtbox .tok:hover { background: #eef4ff; border-color: #93c5fd; color: #1d4ed8; }
-.fmtbox .tb { display: flex; align-items: center; gap: 6px; }
-.fmtbox select { font-size: 11px; padding: 2px 4px; border: 1px solid #d7dbe0; border-radius: 4px; }
-.allcopy { -webkit-app-region: no-drag; margin: 6px 8px 0; padding: 5px 10px; border: 1px solid #d7dbe0; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; }
+.fmtgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.fmtbox .tb { display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.fmtbox select { min-width: 0; max-width: 100%; font-size: 11px; padding: 2px 4px; border: 1px solid #d7dbe0; border-radius: 4px; }
+.fmtfoot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fmtfoot .tb { flex: 1 1 auto; justify-content: flex-start; }
+.fmtimport {
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  border: 1px dashed #cfd5dd;
+  border-radius: 6px;
+  background: #fafafa;
+  color: #6b7280;
+  font-size: 11px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.fmtimport:hover { background: #f3f4f6; border-color: #9ca3af; color: #374151; }
+.listactions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 8px 0; }
+.allcopy { -webkit-app-region: no-drag; margin: 0; padding: 5px 10px; border: 1px solid #d7dbe0; border-radius: 6px; background: #fff; font-size: 12px; cursor: pointer; }
 .allcopy:hover { background: #f3f4f6; }
+
+.findbar, .rembar {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 8px; border-bottom: 1px solid #eef0f3; background: #fbfcfd;
+}
+.findbar input, .rembar input {
+  flex: 1; min-width: 0; border: 1px solid #d7dbe0; border-radius: 5px;
+  padding: 3px 6px; font-size: 12px; outline: none;
+}
+.findbar input:focus, .rembar input:focus { border-color: #2563eb; }
+.findbar button, .rembar button {
+  -webkit-app-region: no-drag; border: 1px solid #d7dbe0; background: #fff;
+  border-radius: 5px; font-size: 12px; min-width: 24px; height: 24px; padding: 0 7px; cursor: pointer;
+}
+.findbar button:hover, .rembar button:hover { background: #f3f4f6; }
+.findstatus, .remmsg { flex: 0 0 auto; min-width: 30px; font-size: 11px; color: #8a909a; }
+.remmsg.bad { color: #c0392b; }

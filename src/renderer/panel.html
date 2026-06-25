@@ -27,11 +27,15 @@
           <button id="toggleAll" class="vistoggle">전체 표시/숨김</button>
         </span>
       </div>
-      <div class="btns add">
-        <button data-type="note">+ 노트</button>
-        <button data-type="memo">+ 메모</button>
-        <button data-type="table">+ 표</button>
+      <div class="addline">
+        <div class="btns add primary-add">
+          <button data-type="note">+ 노트</button>
+          <button data-type="memo">+ 메모</button>
+          <button data-type="table">+ 표</button>
+        </div>
+        <button id="uploadNote" class="uploadbtn">파일 업로드</button>
       </div>
+      <div class="hint uploadhint" id="uploadHint"></div>
       <div class="tabs" id="tabs"></div>
       <div class="cards" id="cards"></div>
     </div>

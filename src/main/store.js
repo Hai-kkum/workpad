@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const DATA_FILE = () => path.join(app.getPath('userData'), 'workpad-data.enc');
 const KEY_FILE = () => path.join(app.getPath('userData'), 'workpad-key.bin');
 const SCRYPT = { N: 16384, r: 8, p: 1 }; // 비밀번호 잠금(SE-9) KDF — data:export와 동일 파라미터
+const DEFAULT_FORMAT = { enabled: false, template: '[{날짜단축} {시간}] ', timeBasis: 'now' };
 
 let dek = null;          // Buffer(32) 데이터 암호화 키
 let state = null;        // 메모리 상태
@@ -172,6 +173,22 @@ function migrateCardTypes(s) {
   }
 }
 
+function normalizeCards(s) {
+  for (const id of Object.keys((s && s.cards) || {})) {
+    const c = s.cards[id];
+    if (!c || typeof c !== 'object') continue;
+    if (!c.id) c.id = id;
+    if (!c.section) c.section = '공통';
+    if (!c.format || typeof c.format !== 'object' || Array.isArray(c.format)) c.format = {};
+    if (c.format.enabled == null) c.format.enabled = DEFAULT_FORMAT.enabled;
+    if (typeof c.format.template !== 'string') c.format.template = DEFAULT_FORMAT.template;
+    if (c.format.timeBasis == null) c.format.timeBasis = DEFAULT_FORMAT.timeBasis;
+    if ((c.type === 'note' || c.type === 'todo' || c.type === 'callmemo') && !Array.isArray(c.lines)) c.lines = [];
+    if (c.type === 'memo' && (!c.content || typeof c.content !== 'object')) c.content = { text: '' };
+    if (c.type === 'table' && !Array.isArray(c.rows)) c.rows = [['항목', '값'], ['', '']];
+  }
+}
+
 // TTL 경과한 노트(구 콜 메모) 줄 파기
 function purgeExpired(s) {
   const now = Date.now();
@@ -198,6 +215,7 @@ function loadData() {
   state = Object.assign(defaultState(), state);                                  // 누락 필드 보정
   state.settings = Object.assign(defaultState().settings, state.settings || {}); // 설정 누락 키 보정(maskPII 등)
   migrateCardTypes(state); // 상용구·기록 메모 → 노트 통합(동작 보존)
+  normalizeCards(state);
   purgeExpired(state);
   scheduleSave();
   return state;
@@ -291,6 +309,7 @@ const api = {
     if (!next.presets || typeof next.presets !== 'object') next.presets = {};
     state = next;
     migrateCardTypes(state); // 옛 백업(상용구·기록 메모)도 노트로 통합
+    normalizeCards(state);
     purgeExpired(state);
     flush();
     return state;
