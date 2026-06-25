@@ -102,7 +102,7 @@ function renderCardList() {
         });
         armedDelete = c.id;
         delBtn.classList.add('armed');
-        delBtn.textContent = '삭제?';
+        delBtn.textContent = '삭제';
         delBtn.title = '한 번 더 누르면 삭제됩니다';
         setTimeout(resetDelete, 3500);
         return;
