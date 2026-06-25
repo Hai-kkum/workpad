@@ -85,7 +85,9 @@ function renderCardList() {
     d.querySelector('.del').addEventListener('click', async (e) => {
       e.stopPropagation();
       if (window.confirm(`'${c.title || '제목 없음'}' 카드를 삭제할까요? 되돌릴 수 없습니다.`)) {
-        await window.api.deleteCard(c.id); refreshCards(); refreshStatus();
+        await window.api.deleteCard(c.id);
+        await refreshCards();
+        await refreshStatus();
       }
     });
     el.appendChild(d);
@@ -230,6 +232,8 @@ async function commitAgentId() {
 async function refreshStatus() {
   const s = await window.api.status();
   const set = await window.api.getSettings();
+  const ver = document.querySelector('.ver');
+  if (ver && s.version) ver.textContent = `v${s.version}`;
   const st = $('#status');
   const protLabel = s.keyMode === 'passphrase' ? '비밀번호 잠금' : '키 보호됨';
   st.textContent = (s.keyProtected ? `로컬 암호화 적용(${protLabel})` : '주의: 키가 보호되지 않음(DPAPI 불가) — 데이터 보호가 약합니다. 설정에서 비밀번호 잠금을 켜세요') + ` · 카드 ${s.cardCount}개`;

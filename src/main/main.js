@@ -413,6 +413,17 @@ function focusAndFlashCard(id, flashes = 1) {
   return true;
 }
 
+function refocusWindow(win) {
+  if (!win || win.isDestroyed()) return;
+  setTimeout(() => {
+    if (!win || win.isDestroyed()) return;
+    try { if (win.isMinimized && win.isMinimized()) win.restore(); } catch (_) {}
+    try { win.show(); } catch (_) {}
+    try { win.focus(); } catch (_) {}
+    try { win.webContents.focus(); } catch (_) {}
+  }, 0);
+}
+
 function clearReminderTimer(id) {
   const t = reminderTimers.get(id);
   if (t) clearTimeout(t);
@@ -515,11 +526,16 @@ function registerIpc() {
     }
     store.updateCard(id, { collapsed });
   });
-  ipcMain.handle('card:close', (_e, id) => { // 영구 삭제(패널의 휴지통에서 확인 후 호출)
+  ipcMain.handle('card:close', (e, id) => { // 영구 삭제(패널의 휴지통에서 확인 후 호출)
     const win = cards.get(id);
+    const requester = BrowserWindow.fromWebContents(e.sender);
+    const refocusTarget = requester && requester !== win ? requester : panelWin;
     clearReminderTimer(id);
     store.removeCard(id);
     if (win && !win.isDestroyed()) win.close();
+    notifyPanel();
+    refocusWindow(refocusTarget);
+    return true;
   });
   ipcMain.handle('card:hide', (_e, id) => { // 카드 X = 숨김(데이터 유지, 복구 가능 — B-8)
     const win = cards.get(id);
@@ -582,6 +598,7 @@ function registerIpc() {
     loadError: store.getLoadError(),
     allowDataTransfer: appConfig.allowDataTransfer !== false,
     allowNoteFileUpload: noteFileUploadAllowed(),
+    version: app.getVersion(),
   }));
   // 비밀번호 잠금(SE-9) 관리 — 패널 창에서만 호출(발신자 검증, Codex P2). 비밀번호 = 숫자 6자리. 분실 시 복구불가(설계상).
   const PIN = /^\d{6}$/;
