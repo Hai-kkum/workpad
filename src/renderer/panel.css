@@ -146,3 +146,4 @@ input:focus { border-color: #2563eb; }
 .cardrow .del { margin-left: 2px; border: 0; background: transparent; color: #b6bcc5; cursor: pointer; font-size: 12px; line-height: 1; padding: 2px 4px; border-radius: 4px; visibility: hidden; }
 .cardrow:hover .del { visibility: visible; }
 .cardrow .del:hover { color: #c0392b; background: #fdecea; }
+.cardrow .del.armed { visibility: visible; color: #c0392b; background: #fdecea; font-size: 11px; padding: 2px 6px; }

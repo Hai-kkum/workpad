@@ -415,13 +415,28 @@ function focusAndFlashCard(id, flashes = 1) {
 
 function refocusWindow(win) {
   if (!win || win.isDestroyed()) return;
-  setTimeout(() => {
+  const run = () => {
     if (!win || win.isDestroyed()) return;
     try { if (win.isMinimized && win.isMinimized()) win.restore(); } catch (_) {}
     try { win.show(); } catch (_) {}
+    try { win.moveTop(); } catch (_) {}
     try { win.focus(); } catch (_) {}
     try { win.webContents.focus(); } catch (_) {}
-  }, 0);
+  };
+  run();
+  setTimeout(run, 50);
+  setTimeout(run, 180);
+}
+
+function closeCardWindow(win) {
+  if (!win || win.isDestroyed()) return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; resolve(); } };
+    win.once('closed', finish);
+    try { win.close(); } catch (_) { finish(); }
+    setTimeout(finish, 300);
+  });
 }
 
 function clearReminderTimer(id) {
@@ -526,13 +541,13 @@ function registerIpc() {
     }
     store.updateCard(id, { collapsed });
   });
-  ipcMain.handle('card:close', (e, id) => { // 영구 삭제(패널의 휴지통에서 확인 후 호출)
+  ipcMain.handle('card:close', async (e, id) => { // 영구 삭제(패널의 휴지통에서 확인 후 호출)
     const win = cards.get(id);
     const requester = BrowserWindow.fromWebContents(e.sender);
     const refocusTarget = requester && requester !== win ? requester : panelWin;
     clearReminderTimer(id);
     store.removeCard(id);
-    if (win && !win.isDestroyed()) win.close();
+    await closeCardWindow(win);
     notifyPanel();
     refocusWindow(refocusTarget);
     return true;

@@ -20,6 +20,7 @@ let sectionDeleteMode = false;
 const FALLBACK_SECTION = '공통';
 const FIXED_SECTIONS = new Set([FALLBACK_SECTION]);
 let deleteModeDismiss = null; // 섹션 삭제 모드('-') 바깥 클릭 해제 리스너
+let armedDelete = null;
 
 function disarmDeleteDismiss() {
   if (deleteModeDismiss) { document.removeEventListener('pointerdown', deleteModeDismiss, true); deleteModeDismiss = null; }
@@ -64,6 +65,7 @@ function inTab(c) {
 
 function renderCardList() {
   const el = $('#cards');
+  armedDelete = null;
   el.innerHTML = '';
   const list = allCards.filter(inTab);
   if (!list.length) { el.innerHTML = `<div class="empty">'${activeTab}' 탭에 카드가 없습니다. 위 + 버튼으로 추가하세요.</div>`; return; }
@@ -82,13 +84,32 @@ function renderCardList() {
     const sel = d.querySelector('.sectsel');
     sel.addEventListener('click', (e) => e.stopPropagation());
     sel.addEventListener('change', async (e) => { e.stopPropagation(); await window.api.updateCard(c.id, { section: e.target.value }); await window.api.showSection(activeTab); await refreshCards(); }); // 재배정 후 현재 탭 기준 표시 갱신
-    d.querySelector('.del').addEventListener('click', async (e) => {
+    const delBtn = d.querySelector('.del');
+    const resetDelete = () => {
+      if (armedDelete !== c.id) return;
+      armedDelete = null;
+      delBtn.classList.remove('armed');
+      delBtn.textContent = '✕';
+      delBtn.title = '삭제(되돌릴 수 없음)';
+    };
+    delBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      if (window.confirm(`'${c.title || '제목 없음'}' 카드를 삭제할까요? 되돌릴 수 없습니다.`)) {
-        await window.api.deleteCard(c.id);
-        await refreshCards();
-        await refreshStatus();
+      if (armedDelete !== c.id) {
+        el.querySelectorAll('.del.armed').forEach((btn) => {
+          btn.classList.remove('armed');
+          btn.textContent = '✕';
+          btn.title = '삭제(되돌릴 수 없음)';
+        });
+        armedDelete = c.id;
+        delBtn.classList.add('armed');
+        delBtn.textContent = '삭제?';
+        delBtn.title = '한 번 더 누르면 삭제됩니다';
+        setTimeout(resetDelete, 3500);
+        return;
       }
+      await window.api.deleteCard(c.id);
+      await refreshCards();
+      await refreshStatus();
     });
     el.appendChild(d);
   }
@@ -453,6 +474,7 @@ function wire() {
   const search = $('#search');
   const searchClear = $('#searchClear');
   const updateClear = () => { searchClear.hidden = !search.value; };
+  search.addEventListener('pointerdown', () => setTimeout(() => search.focus(), 0));
   search.addEventListener('input', updateClear); // 입력 즉시 ✕ 표시/숨김
   search.addEventListener('input', debounce(() => { const q = search.value.trim(); if (q) doSearch(q); else renderCardList(); }, 200));
   // ✕ 한 번에 지우기: click 대신 mousedown + preventDefault 로 처리.
