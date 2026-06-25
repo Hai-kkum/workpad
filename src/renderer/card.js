@@ -94,7 +94,7 @@ function fmtLineTime(t) {
   return (card.timeDisplay === 'time') ? time : `${date} ${time}`;
 }
 
-// 복사 스탬프에 들어갈 시각 결정 — 시각 기준(fmt.timeBasis): now=복사 시점 / lineTime=줄 작성시각(line.t) / callStart=통화 시작(card.createdAt).
+// 복사 스탬프에 들어갈 시각 결정 — 시각 기준(fmt.timeBasis): now=복사 시점 / lineTime=줄 작성시각(line.t) / callStart=노트 시작(card.createdAt).
 function stampTime(fmt, lineT) {
   const basis = (fmt && fmt.timeBasis) || 'now';
   if (basis === 'lineTime') return lineT != null ? lineT : ((card && card.createdAt) || Date.now());
@@ -497,7 +497,7 @@ function renderList(body) {
     '<div class="fmtgrid">' +
       '<label class="tb">말머리 <select id="hdrSel"></select></label>' +
       '<label class="tb">화면 말머리 <select id="timeDisp"><option value="off">끔</option><option value="time">시간만</option><option value="datetime">날짜+시간</option></select></label>' +
-      '<label class="tb" title="복사 스탬프의 {시간}/{날짜}가 가리키는 시각. 복사 시점=복사하는 지금, 줄 작성시각=그 줄을 적은 때, 통화 시작=카드 생성 시각.">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="lineTime">줄 작성시각</option><option value="callStart">통화 시작</option></select></label>' +
+      '<label class="tb" title="복사 스탬프의 {시간}/{날짜}가 가리키는 시각. 복사 시점=복사하는 지금, 줄 작성시각=그 줄을 적은 때, 노트 시작=카드 생성 시각.">시각 기준 <select id="fmtBasis"><option value="now">복사 시점</option><option value="lineTime">줄 작성시각</option><option value="callStart">노트 시작</option></select></label>' +
       '<label class="tb" title="설정한 기간이 지난 줄은 다음 실행 시 자동으로 삭제됩니다(개인정보 보호). \'안 함\'이면 삭제하지 않습니다.">자동 삭제 <select id="ttlSel"><option value="0">안 함</option><option value="7">7일 후</option><option value="14">14일 후</option><option value="30">30일 후</option><option value="60">60일 후</option><option value="90">90일 후</option></select></label>' +
     '</div>' +
     '<div class="fmtfoot"><label class="tb" id="detailsFoldWrap"><input type="checkbox" id="detailsHidden"> 상세는 헤더만 보기</label><button type="button" id="noteImportBtn" class="fmtimport">파일 추가</button></div>';
